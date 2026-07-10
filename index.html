@@ -1,0 +1,624 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#060816" />
+    <title>PulseChat</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+        line-height: 1.5;
+        font-weight: 400;
+        background: #060816;
+        color: #f5f7ff;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: radial-gradient(circle at top, #182245, #060816 60%);
+        color: #f5f7ff;
+      }
+      button, input { font: inherit; }
+      button { cursor: pointer; }
+      #app { min-height: 100vh; }
+      .app-shell { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 20px; }
+      .auth-card, .sidebar, .chat-panel, .loading-card {
+        background: rgba(6, 12, 31, 0.84);
+        backdrop-filter: blur(24px);
+        border: 1px solid rgba(255,255,255,0.08);
+        box-shadow: 0 24px 70px rgba(0, 0, 0, 0.35);
+      }
+      .auth-card { width: min(100%, 430px); padding: 32px; border-radius: 24px; }
+      .brand-block { display: flex; align-items: center; gap: 14px; margin-bottom: 20px; }
+      .brand-mark { width: 48px; height: 48px; display: grid; place-items: center; background: linear-gradient(145deg, #7c6cf7, #24c0cb); border-radius: 14px; font-size: 24px; }
+      .eyebrow { text-transform: uppercase; letter-spacing: 0.24em; font-size: 0.74rem; color: #86a3ff; margin: 0 0 6px; }
+      h1, h2, h3, p { margin: 0; }
+      .toggle-row { display: flex; gap: 10px; margin: 18px 0; }
+      .toggle { flex: 1; padding: 10px 12px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.1); background: transparent; color: #e2e8ff; }
+      .toggle.active, .primary-btn { background: linear-gradient(135deg, #7c6cf7, #24c0cb); color: white; border: none; }
+      .auth-form { display: grid; gap: 12px; }
+      label { display: grid; gap: 6px; color: #cdd6ff; font-size: 0.95rem; }
+      input { width: 100%; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: white; }
+      input::placeholder { color: #8ea0d3; }
+      .primary-btn { padding: 12px 14px; border-radius: 12px; font-weight: 700; }
+      .status { margin-top: 10px; font-size: 0.92rem; }
+      .error { color: #ff8a8a; }
+      .success { color: #7ee3b4; }
+      .helper-text { margin-top: 12px; color: #97a2c6; font-size: 0.92rem; }
+      .dashboard-shell { align-items: stretch; padding: 18px; }
+      .sidebar { width: min(100%, 360px); border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+      .profile-card { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.04); }
+      .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: white; overflow: hidden; }
+      .avatar.small { width: 40px; height: 40px; font-size: 0.9rem; }
+      .avatar img { width: 100%; height: 100%; object-fit: cover; }
+      .online-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.8rem; color: #7ee3b4; }
+      .online-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3ee98f; box-shadow: 0 0 0 4px rgba(62, 233, 143, 0.2); display: inline-block; }
+      .section-header { display: flex; justify-content: space-between; align-items: center; }
+      .ghost-btn { background: transparent; border: 1px solid rgba(255,255,255,0.12); color: #dce4ff; padding: 8px 10px; border-radius: 999px; }
+      .contact-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
+      .discover-panel { margin-top: 10px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+      .discover-panel input { margin-top: 8px; margin-bottom: 8px; }
+      .discover-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
+      .friend-request-card { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+      .friend-request-card button { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: transparent; color: #fff; }
+      .friend-request-card .accept { background: linear-gradient(135deg, #7c6cf7, #24c0cb); border: none; }
+      .contact-card { border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: inherit; padding: 10px; border-radius: 14px; display: flex; gap: 10px; align-items: center; text-align: left; }
+      .contact-card.active { border-color: #7c6cf7; background: rgba(124,108,247,0.16); }
+      .contact-body { flex: 1; min-width: 0; }
+      .contact-topline { display: flex; justify-content: space-between; gap: 10px; font-size: 0.95rem; }
+      .contact-body p { color: #9da8cf; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .chat-panel { flex: 1; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-height: 70vh; margin-left: 16px; }
+      .chat-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .header-badge { padding: 7px 12px; border-radius: 999px; background: rgba(36,192,203,0.16); color: #86f3ff; font-size: 0.9rem; }
+      .message-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+      .message-row { display: flex; }
+      .message-row.mine { justify-content: flex-end; }
+      .bubble { max-width: min(78%, 520px); background: rgba(255,255,255,0.08); border-radius: 16px 16px 16px 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+      .bubble.mine { background: linear-gradient(135deg, rgba(124,108,247,0.95), rgba(36,192,203,0.86)); border-radius: 16px 16px 6px 16px; }
+      .bubble p { color: #f9fbff; }
+      .bubble img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; }
+      .bubble span { font-size: 0.75rem; color: rgba(255,255,255,0.72); align-self: flex-end; }
+      .typing-bubble { flex-direction: row; gap: 6px; align-items: center; padding: 12px; }
+      .typing-bubble span { width: 8px; height: 8px; border-radius: 50%; background: white; display: inline-block; animation: pulse 1s infinite ease-in-out; }
+      .typing-bubble span:nth-child(2) { animation-delay: 0.2s; }
+      .typing-bubble span:nth-child(3) { animation-delay: 0.4s; }
+      @keyframes pulse { 0%,80%,100% { transform: scale(0.8); opacity: 0.5; } 40% { transform: scale(1.1); opacity: 1; } }
+      .composer { display: flex; flex-direction: column; gap: 10px; }
+      .input-row { display: flex; gap: 10px; align-items: center; }
+      .input-row input { flex: 1; }
+      .upload-btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid rgba(255,255,255,0.13); padding: 10px 12px; color: #dfe7ff; background: rgba(255,255,255,0.04); }
+      .upload-btn input { display: none; }
+      .preview-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 8px 10px; }
+      .preview-card img { width: 60px; height: 60px; object-fit: cover; border-radius: 10px; }
+      .empty-state { color: #94a0c4; padding: 24px 0; text-align: center; }
+      @media (max-width: 900px) {
+        .dashboard-shell { flex-direction: column; }
+        .sidebar { width: 100%; }
+        .chat-panel { margin-left: 0; min-height: unset; }
+      }
+      @media (max-width: 620px) {
+        .auth-card { padding: 24px; }
+        .input-row { flex-wrap: wrap; }
+        .input-row > * { flex: 1 1 100%; }
+        .chat-header { flex-direction: column; align-items: flex-start; gap: 8px; }
+        .bubble { max-width: 100%; }
+      }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script>
+      const STORAGE_KEY = 'pulsechat-state-v1';
+      const firebaseConfig = {
+        apiKey: "AIzaSyBBdWdwBh1QVZ8Cjqayj4nJBtHuzeyHl2Q",
+        authDomain: "chattify-d2431.firebaseapp.com",
+        databaseURL: "https://chattify-d2431-default-rtdb.asia-southeast1.firebasedatabase.app/",
+        projectId: "chattify-d2431",
+        storageBucket: "chattify-d2431.firebasestorage.app",
+        messagingSenderId: "20850150249",
+        appId: "1:20850150249:web:92d64b1c00ac68f8fe0bf8",
+        measurementId: "G-NJTHTJ8DM5"
+      };
+      const demoUsers = [
+        { id: 'user-ava', name: 'Ava Chen', email: 'ava@example.com', role: 'Product Design', color: '#7c6cf7' },
+        { id: 'user-noah', name: 'Noah Singh', email: 'noah@example.com', role: 'Growth Lead', color: '#24c0cb' },
+        { id: 'user-mina', name: 'Mina Alvarez', email: 'mina@example.com', role: 'Community Manager', color: '#ff7c5c' },
+      ];
+
+      function createId(prefix) {
+        return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
+      }
+      function getInitials(name) {
+        return name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
+      }
+      function formatTime(timestamp) {
+        return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
+      }
+      function buildReply(text) {
+        if (!text) return 'That sounds great — I am ready when you are.';
+        if (/image|photo|screenshot/i.test(text)) return 'Perfect, I can review this with you right away.';
+        return `I saw your note: “${text}”. Let’s keep moving.`;
+      }
+
+      const state = {
+        authReady: false,
+        authLoading: false,
+        authError: '',
+        authMessage: '',
+        users: demoUsers,
+        currentUser: null,
+        conversations: {},
+        activeContactId: null,
+        draft: '',
+        typing: false,
+        error: '',
+        selectedImage: '',
+        discoverQuery: '',
+        friends: [],
+        friendRequests: [],
+      };
+
+      const app = document.getElementById('app');
+      let firebaseAuth = null;
+      let firebaseDatabase = null;
+      let usersSyncRef = null;
+      let conversationsSyncRef = null;
+
+      function normalizeUser(user) {
+        return {
+          id: user.uid,
+          uid: user.uid,
+          name: user.displayName || user.email?.split('@')[0] || 'Google User',
+          email: user.email || '',
+          photoURL: user.photoURL || '',
+          role: 'Authenticated with Google',
+          color: '#7c6cf7',
+        };
+      }
+
+      function upsertUser(user) {
+        const normalized = normalizeUser(user);
+        const existingIndex = state.users.findIndex((entry) => entry.id === normalized.id || entry.email === normalized.email);
+        if (existingIndex >= 0) {
+          state.users[existingIndex] = { ...state.users[existingIndex], ...normalized };
+          return state.users[existingIndex];
+        }
+        state.users = [...state.users, normalized];
+        return normalized;
+      }
+
+      function mapAuthError(error) {
+        if (error?.code === 'auth/popup-blocked') {
+          return 'The sign-in popup was blocked. Please allow popups and try again.';
+        }
+        if (error?.code === 'auth/popup-closed-by-user') {
+          return 'Google sign-in was cancelled.';
+        }
+        if (error?.code === 'auth/network-request-failed') {
+          return 'Network issue detected. Please check your connection and try again.';
+        }
+        return error?.message || 'Google sign-in failed.';
+      }
+
+      function persist() {
+        localStorage.setItem(STORAGE_KEY, JSON.stringify({
+          users: state.users,
+          conversations: state.conversations,
+          activeContactId: state.activeContactId,
+          friends: state.friends,
+          friendRequests: state.friendRequests,
+        }));
+      }
+
+      function syncUsersFromDatabase() {
+        if (!firebaseDatabase) return;
+        if (usersSyncRef) {
+          firebaseDatabase.ref('users').off('value', usersSyncRef);
+        }
+
+        usersSyncRef = (snapshot) => {
+          const values = snapshot.val() || {};
+          const remoteUsers = Object.values(values).filter(Boolean);
+          const mergedUsers = [...demoUsers];
+
+          remoteUsers.forEach((entry) => {
+            const normalized = {
+              ...entry,
+              id: entry.id || entry.uid || entry.email,
+              uid: entry.uid || entry.id || entry.email,
+              name: entry.name || entry.email?.split('@')[0] || 'Google User',
+              email: entry.email || '',
+              photoURL: entry.photoURL || '',
+              role: entry.role || 'Authenticated with Google',
+              color: entry.color || '#7c6cf7',
+            };
+            if (!mergedUsers.some((user) => user.id === normalized.id || user.email === normalized.email)) {
+              mergedUsers.push(normalized);
+            }
+          });
+
+          state.users = mergedUsers;
+          if (state.currentUser) {
+            const refreshed = state.users.find((user) => user.id === state.currentUser.id || user.email === state.currentUser.email);
+            if (refreshed) {
+              state.currentUser = refreshed;
+            }
+          }
+          persist();
+          render();
+        };
+
+        firebaseDatabase.ref('users').on('value', usersSyncRef);
+      }
+
+      function writeCurrentUserToDatabase(user) {
+        if (!firebaseDatabase || !user) return;
+        const userRef = firebaseDatabase.ref(`users/${user.id}`);
+        userRef.set({
+          ...user,
+          lastSeen: Date.now(),
+        });
+        userRef.onDisconnect().remove();
+      }
+
+      function syncConversationsFromDatabase() {
+        if (!firebaseDatabase) return;
+        if (conversationsSyncRef) {
+          firebaseDatabase.ref('conversations').off('value', conversationsSyncRef);
+        }
+
+        conversationsSyncRef = (snapshot) => {
+          const rooms = snapshot.val() || {};
+          const normalizedConversations = {};
+
+          Object.entries(rooms).forEach(([roomKey, roomMessages]) => {
+            if (!roomMessages) return;
+            const messages = Array.isArray(roomMessages)
+              ? roomMessages
+              : Object.values(roomMessages).filter(Boolean);
+            normalizedConversations[roomKey] = messages.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+          });
+
+          state.conversations = normalizedConversations;
+          persist();
+          render();
+        };
+
+        firebaseDatabase.ref('conversations').on('value', conversationsSyncRef);
+      }
+
+      function render() {
+        if (!state.authReady) {
+          app.innerHTML = '<div class="app-shell"><div class="loading-card">Preparing PulseChat…</div></div>';
+          return;
+        }
+
+        if (!state.currentUser) {
+          app.innerHTML = `
+            <div class="app-shell auth-shell">
+              <div class="auth-card">
+                <div class="brand-block">
+                  <div class="brand-mark">✦</div>
+                  <div>
+                    <p class="eyebrow">Secure access</p>
+                    <h1>PulseChat</h1>
+                  </div>
+                </div>
+                <p class="helper-text">Sign in with your Google account to unlock the chat dashboard. Firebase Authentication handles your identity securely.</p>
+                <button class="primary-btn" id="google-login" type="button">${state.authLoading ? 'Signing in…' : 'Continue with Google'}</button>
+                ${state.authError ? `<p class="status error">${state.authError}</p>` : ''}
+                ${state.authMessage ? `<p class="status success">${state.authMessage}</p>` : ''}
+                <p class="helper-text">Replace the placeholder Firebase settings in this file with your project values before testing the login flow.</p>
+              </div>
+            </div>`;
+
+          document.getElementById('google-login').addEventListener('click', handleGoogleLogin);
+          return;
+        }
+
+        const contacts = state.users.filter((user) => user.id !== state.currentUser.id);
+        const activeContact = contacts.find((contact) => contact.id === state.activeContactId) || contacts[0] || null;
+        const roomKey = activeContact ? [state.currentUser.id, activeContact.id].sort().join('-') : null;
+        const messages = roomKey ? state.conversations[roomKey] || [] : [];
+
+        app.innerHTML = `
+          <div class="app-shell dashboard-shell">
+            <aside class="sidebar">
+              <div class="profile-card">
+                <div class="avatar" style="background:${state.currentUser.color}">
+                  ${state.currentUser.photoURL ? `<img src="${state.currentUser.photoURL}" alt="${state.currentUser.name}">` : getInitials(state.currentUser.name)}
+                </div>
+                <div>
+                  <h2>${state.currentUser.name}</h2>
+                  <p>${state.currentUser.email}</p>
+                  <p>${state.currentUser.role}</p>
+                  <span class="online-pill">Currently active on PulseChat</span>
+                </div>
+              </div>
+              <div class="section-header">
+                <h3>Active rooms</h3>
+                <button class="ghost-btn" id="logout">Logout</button>
+              </div>
+              <div class="discover-panel">
+                <strong>Find friends</strong>
+                <input id="discover-query" value="${state.discoverQuery}" placeholder="Search by name or email">
+                <div>
+                  ${(() => {
+                    const visibleUsers = state.users.filter((user) => user.id !== state.currentUser.id);
+                    const matches = visibleUsers.filter((user) => {
+                      if (!state.discoverQuery) return true;
+                      const text = `${user.name} ${user.email}`.toLowerCase();
+                      return text.includes(state.discoverQuery.toLowerCase());
+                    });
+                    return matches.length ? matches.map((user) => `<div class="discover-item"><span>${user.name}</span><button class="ghost-btn" data-add-friend="${user.id}">Add</button></div>`).join('') : '<p class="helper-text">No people found.</p>';
+                  })()}
+                </div>
+              </div>
+              ${state.friendRequests.length ? `<div class="friend-request-card"><div><strong>Friend requests</strong><p class="helper-text">${state.friendRequests.length} pending</p></div><button id="view-requests">Review</button></div>` : ''}
+              <div class="contact-list">
+                ${contacts.map((contact) => {
+                  const room = [state.currentUser.id, contact.id].sort().join('-');
+                  const roomMessages = state.conversations[room] || [];
+                  const lastMessage = roomMessages[roomMessages.length - 1];
+                  const isActive = activeContact && contact.id === activeContact.id;
+                  return `
+                    <button class="contact-card ${isActive ? 'active' : ''}" data-contact="${contact.id}">
+                      <div class="avatar small" style="background:${contact.color}">${getInitials(contact.name)}</div>
+                      <div class="contact-body">
+                        <div class="contact-topline"><strong>${contact.name}</strong><span>${lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span></div>
+                        <p>${lastMessage?.text || 'Start a fresh conversation'}</p>
+                      </div>
+                    </button>`;
+                }).join('')}
+              </div>
+            </aside>
+            <main class="chat-panel">
+              <header class="chat-header">
+                <div>
+                  <p class="eyebrow">Direct message</p>
+                  <h2>${activeContact ? activeContact.name : 'Select a room'}</h2>
+                </div>
+                <div class="header-badge">Live • Protected</div>
+              </header>
+              <div class="message-list">
+                ${activeContact ? messages.map((message) => {
+                  const mine = message.senderId === state.currentUser.id;
+                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<span>${formatTime(message.createdAt)}</span></div></div>`;
+                }).join('') : '<div class="empty-state">Pick a contact to begin chatting.</div>'}
+                ${state.typing ? `<div class="message-row"><div class="bubble typing-bubble"><span></span><span></span><span></span></div></div>` : ''}
+              </div>
+              <form class="composer" id="composer-form">
+                ${state.selectedImage ? `<div class="preview-card"><img src="${state.selectedImage}" alt="Preview"><button type="button" class="ghost-btn" id="remove-image">Remove</button></div>` : ''}
+                <div class="input-row">
+                  <input id="draft" value="${state.draft}" placeholder="Write a message…">
+                  <label class="upload-btn">+ Image<input id="image-input" type="file" accept="image/*"></label>
+                  <button class="primary-btn" type="submit">Send</button>
+                </div>
+              </form>
+              ${state.error ? `<p class="status error">${state.error}</p>` : ''}
+            </main>
+          </div>`;
+
+        document.getElementById('logout').addEventListener('click', handleLogout);
+        document.getElementById('discover-query')?.addEventListener('input', (event) => {
+          state.discoverQuery = event.target.value;
+          render();
+        });
+        document.querySelectorAll('[data-add-friend]').forEach((button) => {
+          button.addEventListener('click', () => {
+            sendFriendRequest(button.dataset.addFriend);
+          });
+        });
+        document.getElementById('view-requests')?.addEventListener('click', () => {
+          const request = state.friendRequests[0];
+          if (!request) return;
+          const action = window.confirm(`${request.name} wants to be your friend. Accept?`);
+          if (action) {
+            acceptFriendRequest(request.id);
+          } else {
+            declineFriendRequest(request.id);
+          }
+        });
+        document.querySelectorAll('[data-contact]').forEach((button) => {
+          button.addEventListener('click', () => {
+            state.activeContactId = button.dataset.contact;
+            render();
+          });
+        });
+        document.getElementById('composer-form').addEventListener('submit', (event) => {
+          event.preventDefault();
+          sendMessage();
+        });
+        document.getElementById('draft').addEventListener('input', (event) => {
+          state.draft = event.target.value;
+        });
+        document.getElementById('image-input').addEventListener('change', handleImageSelect);
+        if (document.getElementById('remove-image')) {
+          document.getElementById('remove-image').addEventListener('click', () => {
+            state.selectedImage = '';
+            render();
+          });
+        }
+      }
+
+      function bootstrap() {
+        const raw = localStorage.getItem(STORAGE_KEY);
+        if (raw) {
+          try {
+            const parsed = JSON.parse(raw);
+            state.users = parsed.users || demoUsers;
+            state.conversations = parsed.conversations || {};
+            state.activeContactId = parsed.activeContactId || null;
+            state.friends = parsed.friends || [];
+            state.friendRequests = parsed.friendRequests || [];
+          } catch {
+            state.users = demoUsers;
+          }
+        }
+
+        if (!window.firebase) {
+          state.authError = 'Firebase SDK failed to load.';
+          state.authReady = true;
+          render();
+          return;
+        }
+
+        if (!firebase.apps.length) {
+          firebase.initializeApp(firebaseConfig);
+        }
+
+        firebaseAuth = firebase.auth();
+        firebaseDatabase = firebase.database();
+        syncUsersFromDatabase();
+        syncConversationsFromDatabase();
+        firebaseAuth.onAuthStateChanged((user) => {
+          state.authReady = true;
+          state.authLoading = false;
+          if (user) {
+            const normalized = upsertUser(user);
+            state.currentUser = normalized;
+            writeCurrentUserToDatabase(normalized);
+            state.authError = '';
+            state.authMessage = `Signed in as ${state.currentUser.name}`;
+          } else {
+            if (state.currentUser && firebaseDatabase) {
+              firebaseDatabase.ref(`users/${state.currentUser.id}`).remove();
+            }
+            state.currentUser = null;
+            state.authMessage = '';
+          }
+          render();
+        });
+      }
+
+      async function handleGoogleLogin() {
+        if (!firebaseAuth) {
+          state.authError = 'Firebase authentication is not ready yet.';
+          render();
+          return;
+        }
+
+        if (firebaseConfig.projectId.includes('YOUR_') || firebaseConfig.apiKey.includes('YOUR_')) {
+          state.authError = 'Replace the Firebase config placeholders with your project values before testing sign-in.';
+          render();
+          return;
+        }
+
+        state.authLoading = true;
+        state.authError = '';
+        state.authMessage = '';
+        render();
+
+        try {
+          const provider = new firebase.auth.GoogleAuthProvider();
+          provider.setCustomParameters({ prompt: 'select_account' });
+          await firebaseAuth.signInWithPopup(provider);
+          state.authLoading = false;
+          state.authMessage = 'Signed in successfully.';
+          render();
+        } catch (error) {
+          state.authLoading = false;
+          state.authError = mapAuthError(error);
+          render();
+        }
+      }
+
+      async function handleLogout() {
+        try {
+          if (state.currentUser && firebaseDatabase) {
+            firebaseDatabase.ref(`users/${state.currentUser.id}`).remove();
+          }
+          await firebaseAuth.signOut();
+          state.currentUser = null;
+          state.activeContactId = null;
+          state.authMessage = 'Signed out.';
+          render();
+        } catch (error) {
+          state.authError = mapAuthError(error);
+          render();
+        }
+      }
+
+      function sendFriendRequest(targetId) {
+        if (!state.currentUser) return;
+        const targetUser = state.users.find((user) => user.id === targetId);
+        if (!targetUser) return;
+        const alreadyRequested = state.friendRequests.some((request) => request.fromId === state.currentUser.id && request.toId === targetId);
+        if (alreadyRequested) {
+          state.authMessage = `Friend request already sent to ${targetUser.name}.`;
+          render();
+          return;
+        }
+        state.friendRequests = [...state.friendRequests, { id: createId('friend'), fromId: state.currentUser.id, toId: targetId, name: state.currentUser.name }];
+        state.authMessage = `Friend request sent to ${targetUser.name}.`;
+        persist();
+        render();
+      }
+
+      function acceptFriendRequest(requestId) {
+        const request = state.friendRequests.find((item) => item.id === requestId);
+        if (!request) return;
+        state.friends = [...new Set([...state.friends, request.fromId, request.toId])];
+        state.friendRequests = state.friendRequests.filter((item) => item.id !== requestId);
+        state.authMessage = `You are now friends with ${request.name}.`;
+        persist();
+        render();
+      }
+
+      function declineFriendRequest(requestId) {
+        state.friendRequests = state.friendRequests.filter((item) => item.id !== requestId);
+        state.authMessage = 'Friend request declined.';
+        persist();
+        render();
+      }
+
+      function sendMessage() {
+        if (!state.currentUser) return;
+        const cleanText = state.draft.trim();
+        if (!cleanText && !state.selectedImage) {
+          state.error = 'Add a note or choose an image before sending.';
+          render();
+          return;
+        }
+        state.error = '';
+        const activeContact = state.users.find((user) => user.id === state.activeContactId) || state.users[0];
+        if (!activeContact) {
+          render();
+          return;
+        }
+        const roomKey = [state.currentUser.id, activeContact.id].sort().join('-');
+        const outgoing = { id: createId('msg'), senderId: state.currentUser.id, text: cleanText, image: state.selectedImage, createdAt: new Date().toISOString() };
+        const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
+        state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
+        state.draft = '';
+        state.selectedImage = '';
+        state.typing = false;
+        persist();
+        render();
+
+        if (roomRef) {
+          roomRef.push(outgoing);
+        }
+      }
+
+      function handleImageSelect(event) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = () => {
+          state.selectedImage = reader.result;
+          render();
+        };
+        reader.readAsDataURL(file);
+      }
+
+      bootstrap();
+    </script>
+  </body>
+</html>
