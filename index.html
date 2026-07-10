@@ -70,6 +70,11 @@
       .composer { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 10px; background: rgba(6, 12, 31, 0.96); padding-top: 10px; padding-bottom: 8px; z-index: 1; }
       .header-badge { padding: 7px 12px; border-radius: 999px; background: rgba(36,192,203,0.16); color: #86f3ff; font-size: 0.9rem; }
       .room-subtitle { color: #94a0c4; font-size: 0.92rem; margin-top: 4px; }
+      .detective-controls { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #e7ecff; }
+      .detective-controls select { border: 0; background: transparent; color: #f5f7ff; outline: none; }
+      .detective-active { border-color: #24c0cb; color: #86f3ff; }
+      .bubble-footer { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .delete-btn { border: 0; background: rgba(255,255,255,0.16); color: white; border-radius: 999px; padding: 4px 8px; font-size: 0.75rem; }
       .modal-backdrop { position: fixed; inset: 0; background: rgba(3, 6, 16, 0.78); display: grid; place-items: center; padding: 20px; z-index: 40; }
       .modal-card { width: min(100%, 540px); background: rgba(8, 14, 33, 0.96); border: 1px solid rgba(255,255,255,0.12); border-radius: 20px; padding: 20px; display: flex; flex-direction: column; gap: 14px; }
       .modal-header { display: flex; justify-content: space-between; align-items: center; }
@@ -165,6 +170,8 @@
         groupModalOpen: false,
         groupName: '',
         selectedGroupMembers: [],
+        detectiveMode: false,
+        impersonatedUserId: null,
         discoverQuery: '',
         friends: [],
         friendRequests: [],
@@ -216,10 +223,10 @@
         const normalized = normalizeUser(user);
         const existingIndex = state.users.findIndex((entry) => entry.id === normalized.id || entry.email === normalized.email);
         if (existingIndex >= 0) {
-          state.users[existingIndex] = { ...state.users[existingIndex], ...normalized };
+          state.users[existingIndex] = { ...state.users[existingIndex], ...normalized, rooms: state.users[existingIndex].rooms || [] };
           return state.users[existingIndex];
         }
-        state.users = [...state.users, normalized];
+        state.users = [...state.users, { ...normalized, rooms: [] }];
         return normalized;
       }
 
@@ -369,6 +376,7 @@
         }
 
         const contacts = state.users.filter((user) => user.id !== state.currentUser.id);
+        const joinedRoomKeys = new Set(state.currentUser.rooms || []);
         const activeContact = contacts.find((contact) => contact.id === state.activeContactId) || contacts[0] || null;
         const directRoomKey = activeContact ? [state.currentUser.id, activeContact.id].sort().join('-') : null;
         const roomEntries = [
@@ -379,6 +387,7 @@
           }),
           ...Object.entries(state.roomMeta)
             .filter(([, meta]) => meta.type === 'group')
+            .filter(([roomKey, meta]) => meta.memberIds?.includes(state.currentUser.id) || joinedRoomKeys.has(roomKey))
             .map(([roomKey, meta]) => ({ roomKey, type: 'group', name: meta.name || 'New group', memberIds: meta.memberIds || [], contactId: null }))
         ];
         const activeRoomKey = state.activeRoomKey || directRoomKey;
@@ -429,13 +438,15 @@
                 </div>
                 <div class="header-actions">
                   <button class="ghost-btn" id="select-accounts" type="button">Select Accounts</button>
+                  ${state.detectiveMode ? `<label class="detective-controls"><span>Send as</span><select id="impersonate-select">${state.users.map((user) => `<option value="${user.id}" ${user.id === (state.impersonatedUserId || state.currentUser.id) ? 'selected' : ''}>${user.name}</option>`).join('')}</select></label>` : ''}
+                  <button class="ghost-btn ${state.detectiveMode ? 'detective-active' : ''}" id="detective-toggle" type="button">${state.detectiveMode ? 'Detective On' : 'Detective'}</button>
                   <div class="header-badge">Live • Protected</div>
                 </div>
               </header>
               <div class="message-list">
                 ${activeRoom ? messages.map((message) => {
                   const mine = message.senderId === state.currentUser.id;
-                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<span>${formatTime(message.createdAt)}</span></div></div>`;
+                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span>${state.detectiveMode ? `<button type="button" class="delete-btn" data-delete-message="${message.id}">Delete</button>` : ''}</div></div></div>`;
                 }).join('') : '<div class="empty-state">Pick a room to begin chatting.</div>'}
               </div>
               <form class="composer" id="composer-form">
@@ -475,6 +486,11 @@
           </div>`;
 
         document.getElementById('logout').addEventListener('click', handleLogout);
+        document.getElementById('detective-toggle').addEventListener('click', handleDetectiveAccess);
+        document.getElementById('impersonate-select')?.addEventListener('change', (event) => {
+          state.impersonatedUserId = event.target.value;
+          render();
+        });
         document.getElementById('select-accounts').addEventListener('click', () => {
           state.groupModalOpen = true;
           render();
@@ -499,6 +515,11 @@
             state.activeRoomKey = button.dataset.room;
             state.activeContactId = button.dataset.contact || null;
             render();
+          });
+        });
+        document.querySelectorAll('[data-delete-message]').forEach((button) => {
+          button.addEventListener('click', () => {
+            handleDeleteMessage(button.dataset.deleteMessage);
           });
         });
         document.getElementById('composer-form').addEventListener('submit', (event) => {
@@ -657,6 +678,34 @@
         render();
       }
 
+      function handleDetectiveAccess() {
+        if (state.detectiveMode) {
+          state.detectiveMode = false;
+          state.impersonatedUserId = null;
+          state.authMessage = 'Detective mode disabled.';
+          render();
+          return;
+        }
+        const password = window.prompt('Enter detective password');
+        if (password === 'snake') {
+          state.detectiveMode = true;
+          state.impersonatedUserId = state.currentUser.id;
+          state.authMessage = 'Detective mode enabled.';
+          render();
+        } else {
+          state.authMessage = 'Incorrect password.';
+          render();
+        }
+      }
+
+      function handleDeleteMessage(messageId) {
+        if (!state.activeRoomKey) return;
+        state.conversations[state.activeRoomKey] = (state.conversations[state.activeRoomKey] || []).filter((message) => message.id !== messageId);
+        state.authMessage = 'Message deleted.';
+        persist();
+        render();
+      }
+
       function createGroupChat() {
         if (!state.currentUser) return;
         if (state.selectedGroupMembers.length < 2) {
@@ -666,12 +715,26 @@
         }
         const roomKey = [state.currentUser.id, ...state.selectedGroupMembers].sort().join('-');
         const cleanedName = state.groupName.trim() || 'New group';
+        const memberIds = [state.currentUser.id, ...state.selectedGroupMembers];
         state.roomMeta[roomKey] = {
           type: 'group',
           name: cleanedName,
-          memberIds: [state.currentUser.id, ...state.selectedGroupMembers],
+          memberIds,
         };
         state.conversations[roomKey] = state.conversations[roomKey] || [];
+        memberIds.forEach((memberId) => {
+          const user = state.users.find((entry) => entry.id === memberId);
+          if (user) {
+            user.rooms = user.rooms || [];
+            if (!user.rooms.includes(roomKey)) {
+              user.rooms.push(roomKey);
+            }
+          }
+        });
+        state.currentUser.rooms = state.currentUser.rooms || [];
+        if (!state.currentUser.rooms.includes(roomKey)) {
+          state.currentUser.rooms.push(roomKey);
+        }
         state.activeRoomKey = roomKey;
         state.activeContactId = null;
         state.groupModalOpen = false;
@@ -696,7 +759,8 @@
           render();
           return;
         }
-        const outgoing = { id: createId('msg'), senderId: state.currentUser.id, text: cleanText, image: state.selectedImage, createdAt: new Date().toISOString() };
+        const senderId = state.detectiveMode ? (state.impersonatedUserId || state.currentUser.id) : state.currentUser.id;
+        const outgoing = { id: createId('msg'), senderId, text: cleanText, image: state.selectedImage, createdAt: new Date().toISOString() };
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
         playNotificationSound('send');

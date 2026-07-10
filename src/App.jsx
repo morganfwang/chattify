@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'pulsechat-state-v1';
-const demoUsers = [];
 
 function createId(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -23,6 +22,10 @@ function formatTime(timestamp) {
   });
 }
 
+function buildRoomKey(memberIds) {
+  return [...memberIds].sort().join('-');
+}
+
 export default function App() {
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState('login');
@@ -35,11 +38,20 @@ export default function App() {
   const [users, setUsers] = useState([]);
   const [currentUser, setCurrentUser] = useState(null);
   const [chats, setChats] = useState({});
-  const [activeContactId, setActiveContactId] = useState(null);
+  const [roomMeta, setRoomMeta] = useState({});
+  const [activeRoomKey, setActiveRoomKey] = useState(null);
   const [draft, setDraft] = useState('');
   const [messageError, setMessageError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [selectedImage, setSelectedImage] = useState('');
+  const [groupModalOpen, setGroupModalOpen] = useState(false);
+  const [groupName, setGroupName] = useState('');
+  const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
+  const [renameTargetRoomKey, setRenameTargetRoomKey] = useState(null);
+  const [renameDraft, setRenameDraft] = useState('');
+  const [detectiveMode, setDetectiveMode] = useState(false);
+  const [impersonatedUserId, setImpersonatedUserId] = useState(null);
+  const [friendFeedback, setFriendFeedback] = useState('');
   const fileInputRef = useRef(null);
 
   useEffect(() => {
@@ -51,7 +63,8 @@ export default function App() {
         setUsers(parsed.users || []);
         setCurrentUser(parsed.currentUser || null);
         setChats(parsed.chats || {});
-        setActiveContactId(parsed.activeContactId || null);
+        setRoomMeta(parsed.roomMeta || {});
+        setActiveRoomKey(parsed.activeRoomKey || null);
       } catch {
         seedDemoData();
       }
@@ -69,28 +82,30 @@ export default function App() {
       users,
       currentUser,
       chats,
-      activeContactId,
+      roomMeta,
+      activeRoomKey,
     };
 
     localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  }, [ready, users, currentUser, chats, activeContactId]);
+  }, [ready, users, currentUser, chats, roomMeta, activeRoomKey]);
 
   useEffect(() => {
     if (!currentUser || !users.length) return;
 
-    if (!activeContactId) {
-      const fallback = users.find((user) => user.id !== currentUser.id);
+    if (!activeRoomKey || !roomList.some((room) => room.roomKey === activeRoomKey)) {
+      const fallback = roomList[0];
       if (fallback) {
-        setActiveContactId(fallback.id);
+        setActiveRoomKey(fallback.roomKey);
       }
     }
-  }, [currentUser, users, activeContactId]);
+  }, [currentUser, users, roomList, activeRoomKey]);
 
   function seedDemoData() {
     setUsers([]);
     setChats({});
+    setRoomMeta({});
     setCurrentUser(null);
-    setActiveContactId(null);
+    setActiveRoomKey(null);
   }
 
   const contacts = useMemo(() => {
@@ -98,15 +113,55 @@ export default function App() {
     return users.filter((user) => user.id !== currentUser.id);
   }, [currentUser, users]);
 
-  const activeContact = useMemo(() => {
-    return contacts.find((contact) => contact.id === activeContactId) || contacts[0] || null;
-  }, [activeContactId, contacts]);
+  const roomList = useMemo(() => {
+    if (!currentUser) return [];
+
+    const joinedRoomKeys = new Set(currentUser.rooms || []);
+
+    const directRooms = contacts.map((contact) => {
+      const roomKey = buildRoomKey([currentUser.id, contact.id]);
+      const meta = roomMeta[roomKey] || {
+        type: 'direct',
+        name: contact.name,
+        memberIds: [currentUser.id, contact.id],
+      };
+
+      return {
+        roomKey,
+        type: meta.type || 'direct',
+        name: meta.name || contact.name,
+        memberIds: meta.memberIds || [currentUser.id, contact.id],
+        contactId: contact.id,
+      };
+    });
+
+    const groupRooms = Object.entries(roomMeta)
+      .filter(([, meta]) => meta.type === 'group')
+      .filter(([roomKey, meta]) => meta.memberIds?.includes(currentUser.id) || joinedRoomKeys.has(roomKey))
+      .map(([roomKey, meta]) => ({
+        roomKey,
+        type: 'group',
+        name: meta.name || 'Group chat',
+        memberIds: meta.memberIds || [],
+        contactId: null,
+      }));
+
+    return [...directRooms, ...groupRooms];
+  }, [contacts, currentUser, roomMeta]);
+
+  const activeRoom = useMemo(() => {
+    return roomList.find((room) => room.roomKey === activeRoomKey) || roomList[0] || null;
+  }, [activeRoomKey, roomList]);
 
   const activeMessages = useMemo(() => {
-    if (!activeContact || !currentUser) return [];
-    const roomKey = [currentUser.id, activeContact.id].sort().join('-');
-    return chats[roomKey] || [];
-  }, [activeContact, chats, currentUser]);
+    if (!activeRoom || !currentUser) return [];
+    return chats[activeRoom.roomKey] || [];
+  }, [activeRoom, chats, currentUser]);
+
+  const availableUsers = useMemo(() => {
+    if (!currentUser) return [];
+    return [currentUser, ...contacts];
+  }, [contacts, currentUser]);
 
   function resetForm() {
     setForm({ name: '', username: '', email: '', password: '' });
@@ -139,6 +194,7 @@ export default function App() {
         password: form.password,
         role: 'Focused Builder',
         color: ['#7c6cf7', '#24c0cb', '#ff7c5c', '#f1b84b'][users.length % 4],
+        rooms: [],
       };
 
       setUsers((previous) => [...previous, user]);
@@ -166,7 +222,7 @@ export default function App() {
 
   function handleSend(event) {
     event.preventDefault();
-    if (!currentUser || !activeContact) return;
+    if (!currentUser || !activeRoom) return;
 
     const cleanText = draft.trim();
     if (!cleanText && !selectedImage) {
@@ -175,10 +231,11 @@ export default function App() {
     }
 
     setMessageError('');
-    const roomKey = [currentUser.id, activeContact.id].sort().join('-');
+    const roomKey = activeRoom.roomKey;
+    const senderId = detectiveMode ? impersonatedUserId || currentUser.id : currentUser.id;
     const outgoingMessage = {
       id: createId('msg'),
-      senderId: currentUser.id,
+      senderId,
       text: cleanText,
       image: selectedImage || '',
       createdAt: new Date().toISOString(),
@@ -206,8 +263,129 @@ export default function App() {
 
   function handleLogout() {
     setCurrentUser(null);
-    setActiveContactId(null);
+    setActiveRoomKey(null);
     setFeedback('Signed out.');
+  }
+
+  function toggleGroupMember(contactId) {
+    setSelectedGroupMembers((previous) => {
+      if (previous.includes(contactId)) {
+        return previous.filter((memberId) => memberId !== contactId);
+      }
+      return [...previous, contactId];
+    });
+  }
+
+  function handleCreateGroup() {
+    if (!currentUser) return;
+
+    if (selectedGroupMembers.length < 2) {
+      setMessageError('Choose at least 2 people to start a group chat.');
+      return;
+    }
+
+    const roomKey = buildRoomKey([currentUser.id, ...selectedGroupMembers]);
+    const cleanedName = groupName.trim() || 'New group';
+
+    const memberIds = [currentUser.id, ...selectedGroupMembers];
+
+    setRoomMeta((previous) => ({
+      ...previous,
+      [roomKey]: {
+        type: 'group',
+        name: cleanedName,
+        memberIds,
+      },
+    }));
+    setChats((previous) => ({
+      ...previous,
+      [roomKey]: previous[roomKey] || [],
+    }));
+    memberIds.forEach((memberId) => addRoomToUser(memberId, roomKey));
+    setActiveRoomKey(roomKey);
+    setGroupModalOpen(false);
+    setGroupName('');
+    setSelectedGroupMembers([]);
+    setFeedback(`${cleanedName} is ready.`);
+    setMessageError('');
+  }
+
+  function handleAddFriend() {
+    setFriendFeedback('Friend management is coming soon.');
+  }
+
+  function handleDetectiveAccess() {
+    if (detectiveMode) {
+      setDetectiveMode(false);
+      setImpersonatedUserId(null);
+      setFeedback('Detective mode disabled.');
+      return;
+    }
+
+    const password = window.prompt('Enter detective password');
+    if (password === 'snake') {
+      setDetectiveMode(true);
+      setImpersonatedUserId(currentUser.id);
+      setFeedback('Detective mode enabled.');
+    } else {
+      setFeedback('Incorrect password.');
+    }
+  }
+
+  function handleDeleteMessage(messageId) {
+    if (!activeRoom) return;
+
+    setChats((previous) => ({
+      ...previous,
+      [activeRoom.roomKey]: (previous[activeRoom.roomKey] || []).filter((message) => message.id !== messageId),
+    }));
+    setFeedback('Message deleted.');
+  }
+
+  function addRoomToUser(userId, roomKey) {
+    setUsers((previous) =>
+      previous.map((user) => {
+        if (user.id !== userId) return user;
+        const existingRooms = user.rooms || [];
+        return {
+          ...user,
+          rooms: existingRooms.includes(roomKey) ? existingRooms : [...existingRooms, roomKey],
+        };
+      })
+    );
+
+    setCurrentUser((previous) => {
+      if (!previous || previous.id !== userId) return previous;
+      const existingRooms = previous.rooms || [];
+      return {
+        ...previous,
+        rooms: existingRooms.includes(roomKey) ? existingRooms : [...existingRooms, roomKey],
+      };
+    });
+  }
+
+  function openRenameMenu(roomKey, currentName) {
+    setRenameTargetRoomKey(roomKey);
+    setRenameDraft(currentName);
+  }
+
+  function saveRoomRename() {
+    if (!renameTargetRoomKey || !renameDraft.trim()) return;
+
+    setRoomMeta((previous) => ({
+      ...previous,
+      [renameTargetRoomKey]: {
+        ...(previous[renameTargetRoomKey] || {}),
+        name: renameDraft.trim(),
+      },
+    }));
+    setRenameTargetRoomKey(null);
+    setRenameDraft('');
+  }
+
+  function cancelRoomRename() {
+    setRenameTargetRoomKey(null);
+    setRenameDraft('');
   }
 
   if (!ready) {
@@ -323,33 +501,53 @@ export default function App() {
 
         <div className="section-header">
           <h3>Active rooms</h3>
-          <button className="ghost-btn" onClick={handleLogout}>Logout</button>
+          <div className="toolbar-buttons">
+            <button className="ghost-btn" onClick={handleAddFriend}>Add Friend</button>
+            <button className="ghost-btn" onClick={handleLogout}>Logout</button>
+          </div>
         </div>
 
+        {friendFeedback && <p className="status success small">{friendFeedback}</p>}
+
         <div className="contact-list">
-          {contacts.map((contact) => {
-            const roomKey = [currentUser.id, contact.id].sort().join('-');
-            const roomMessages = chats[roomKey] || [];
+          {roomList.map((room) => {
+            const roomMessages = chats[room.roomKey] || [];
             const lastMessage = roomMessages[roomMessages.length - 1];
-            const isActive = activeContact?.id === contact.id;
+            const isActive = activeRoom?.roomKey === room.roomKey;
+            const roomColor = room.type === 'group' ? '#24c0cb' : '#7c6cf7';
 
             return (
-              <button
-                key={contact.id}
-                className={isActive ? 'contact-card active' : 'contact-card'}
-                onClick={() => setActiveContactId(contact.id)}
-              >
-                <div className="avatar small" style={{ backgroundColor: contact.color }}>
-                  {getInitials(contact.name)}
-                </div>
-                <div className="contact-body">
-                  <div className="contact-topline">
-                    <strong>{contact.name}</strong>
-                    <span>{lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span>
+              <div key={room.roomKey} className={isActive ? 'contact-card active' : 'contact-card'}>
+                <button
+                  className="room-select-btn"
+                  onClick={() => setActiveRoomKey(room.roomKey)}
+                >
+                  <div className="avatar small" style={{ backgroundColor: roomColor }}>
+                    {getInitials(room.name)}
                   </div>
-                  <p>{lastMessage?.text || 'Start a fresh conversation'}</p>
-                </div>
-              </button>
+                  <div className="contact-body">
+                    <div className="contact-topline">
+                      <strong>{room.name}</strong>
+                      <span>{lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span>
+                    </div>
+                    <p>
+                      {room.type === 'group'
+                        ? `${room.memberIds.length} members`
+                        : lastMessage?.text || 'Start a fresh conversation'}
+                    </p>
+                  </div>
+                </button>
+                {room.type === 'group' && (
+                  <button
+                    type="button"
+                    className="room-menu-btn"
+                    aria-label={`Rename ${room.name}`}
+                    onClick={() => openRenameMenu(room.roomKey, room.name)}
+                  >
+                    ⋯
+                  </button>
+                )}
+              </div>
             );
           })}
         </div>
@@ -358,14 +556,45 @@ export default function App() {
       <main className="chat-panel">
         <header className="chat-header">
           <div>
-            <p className="eyebrow">Direct message</p>
-            <h2>{activeContact ? activeContact.name : 'Select a room'}</h2>
+            <p className="eyebrow">{activeRoom?.type === 'group' ? 'Group chat' : 'Direct message'}</p>
+            <h2>{activeRoom ? activeRoom.name : 'Select a room'}</h2>
+            {activeRoom?.type === 'group' && (
+              <p className="room-subtitle">
+                {activeRoom.memberIds
+                  .map((memberId) => users.find((user) => user.id === memberId)?.name)
+                  .filter(Boolean)
+                  .join(', ')}
+              </p>
+            )}
           </div>
-          <div className="header-badge">Live • Responsive</div>
+          <div className="header-actions">
+            <button className="ghost-btn" onClick={() => setGroupModalOpen(true)}>
+              Select Accounts
+            </button>
+            {detectiveMode && (
+              <label className="detective-controls">
+                <span>Send as</span>
+                <select
+                  value={impersonatedUserId || currentUser.id}
+                  onChange={(event) => setImpersonatedUserId(event.target.value)}
+                >
+                  {availableUsers.map((user) => (
+                    <option key={user.id} value={user.id}>
+                      {user.name}
+                    </option>
+                  ))}
+                </select>
+              </label>
+            )}
+            <button className={detectiveMode ? 'ghost-btn detective-active' : 'ghost-btn'} onClick={handleDetectiveAccess}>
+              {detectiveMode ? 'Detective On' : 'Detective'}
+            </button>
+            <div className="header-badge">Live • Responsive</div>
+          </div>
         </header>
 
         <div className="message-list">
-          {activeContact ? (
+          {activeRoom ? (
             activeMessages.map((message) => {
               const isMine = message.senderId === currentUser.id;
               return (
@@ -373,15 +602,21 @@ export default function App() {
                   <div className={isMine ? 'bubble mine' : 'bubble'}>
                     {message.text && <p>{message.text}</p>}
                     {message.image && <img src={message.image} alt="Shared content" />}
-                    <span>{formatTime(message.createdAt)}</span>
+                    <div className="bubble-footer">
+                      <span>{formatTime(message.createdAt)}</span>
+                      {detectiveMode && (
+                        <button type="button" className="delete-btn" onClick={() => handleDeleteMessage(message.id)}>
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })
           ) : (
-            <div className="empty-state">Pick a contact to begin chatting.</div>
+            <div className="empty-state">Pick a room to begin chatting.</div>
           )}
-
         </div>
 
         <form className="composer" onSubmit={handleSend}>
@@ -409,6 +644,96 @@ export default function App() {
         </form>
         {messageError && <p className="status error">{messageError}</p>}
       </main>
+
+      {renameTargetRoomKey && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Rename group</h3>
+              <button type="button" className="ghost-btn" onClick={cancelRoomRename}>
+                Close
+              </button>
+            </div>
+            <label className="modal-label">
+              Group name
+              <input
+                value={renameDraft}
+                onChange={(event) => setRenameDraft(event.target.value)}
+                placeholder="Enter a new name"
+              />
+            </label>
+            <div className="modal-actions">
+              <button type="button" className="ghost-btn" onClick={cancelRoomRename}>
+                Cancel
+              </button>
+              <button type="button" className="primary-btn" onClick={saveRoomRename}>
+                Save name
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {groupModalOpen && (
+        <div className="modal-backdrop">
+          <div className="modal-card">
+            <div className="modal-header">
+              <h3>Select accounts</h3>
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  setGroupModalOpen(false);
+                  setGroupName('');
+                  setSelectedGroupMembers([]);
+                }}
+              >
+                Close
+              </button>
+            </div>
+
+            <label className="modal-label">
+              Group name
+              <input
+                value={groupName}
+                onChange={(event) => setGroupName(event.target.value)}
+                placeholder="Team ideas"
+              />
+            </label>
+
+            <p className="modal-help">Choose at least 2 accounts to add to the group chat.</p>
+
+            <div className="member-picker">
+              {contacts.map((contact) => {
+                const checked = selectedGroupMembers.includes(contact.id);
+                return (
+                  <label key={contact.id} className={checked ? 'member-option selected' : 'member-option'}>
+                    <input type="checkbox" checked={checked} onChange={() => toggleGroupMember(contact.id)} />
+                    <span>{contact.name}</span>
+                  </label>
+                );
+              })}
+            </div>
+
+            <div className="modal-actions">
+              <button
+                type="button"
+                className="ghost-btn"
+                onClick={() => {
+                  setGroupModalOpen(false);
+                  setGroupName('');
+                  setSelectedGroupMembers([]);
+                }}
+              >
+                Cancel
+              </button>
+              <button type="button" className="primary-btn" onClick={handleCreateGroup}>
+                Create group
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
