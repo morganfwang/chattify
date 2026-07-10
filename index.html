@@ -48,8 +48,8 @@
       .error { color: #ff8a8a; }
       .success { color: #7ee3b4; }
       .helper-text { margin-top: 12px; color: #97a2c6; font-size: 0.92rem; }
-      .dashboard-shell { align-items: stretch; padding: 18px; }
-      .sidebar { width: min(100%, 360px); border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+      .dashboard-shell { align-items: flex-start; padding: 18px; }
+      .sidebar { width: min(100%, 360px); border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; }
       .profile-card { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.04); }
       .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: white; overflow: hidden; }
       .avatar.small { width: 40px; height: 40px; font-size: 0.9rem; }
@@ -59,26 +59,21 @@
       .section-header { display: flex; justify-content: space-between; align-items: center; }
       .ghost-btn { background: transparent; border: 1px solid rgba(255,255,255,0.12); color: #dce4ff; padding: 8px 10px; border-radius: 999px; }
       .contact-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
-      .discover-panel { margin-top: 10px; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
-      .discover-panel input { margin-top: 8px; margin-bottom: 8px; }
-      .discover-item { display: flex; justify-content: space-between; align-items: center; gap: 8px; margin-top: 8px; }
-      .friend-request-card { margin-top: 10px; padding: 10px 12px; border-radius: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-      .friend-request-card button { padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: transparent; color: #fff; }
-      .friend-request-card .accept { background: linear-gradient(135deg, #7c6cf7, #24c0cb); border: none; }
       .contact-card { border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: inherit; padding: 10px; border-radius: 14px; display: flex; gap: 10px; align-items: center; text-align: left; }
       .contact-card.active { border-color: #7c6cf7; background: rgba(124,108,247,0.16); }
       .contact-body { flex: 1; min-width: 0; }
       .contact-topline { display: flex; justify-content: space-between; gap: 10px; font-size: 0.95rem; }
       .contact-body p { color: #9da8cf; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .chat-panel { flex: 1; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; min-height: 70vh; margin-left: 16px; }
+      .chat-panel { flex: 1; width: min(100%, 860px); max-width: 860px; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; height: calc(100vh - 36px); margin-left: 16px; overflow: hidden; position: relative; }
       .chat-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); }
+      .composer { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 10px; background: rgba(6, 12, 31, 0.96); padding-top: 10px; padding-bottom: 8px; z-index: 1; }
       .header-badge { padding: 7px 12px; border-radius: 999px; background: rgba(36,192,203,0.16); color: #86f3ff; font-size: 0.9rem; }
-      .message-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; }
+      .message-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; padding-bottom: 10px; }
       .message-row { display: flex; }
       .message-row.mine { justify-content: flex-end; }
-      .bubble { max-width: min(78%, 520px); background: rgba(255,255,255,0.08); border-radius: 16px 16px 16px 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; }
+      .bubble { max-width: min(78%, 520px); background: rgba(255,255,255,0.08); border-radius: 16px 16px 16px 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow-wrap: break-word; word-break: break-word; }
       .bubble.mine { background: linear-gradient(135deg, rgba(124,108,247,0.95), rgba(36,192,203,0.86)); border-radius: 16px 16px 6px 16px; }
-      .bubble p { color: #f9fbff; }
+      .bubble p { color: #f9fbff; margin: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
       .bubble img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; }
       .bubble span { font-size: 0.75rem; color: rgba(255,255,255,0.72); align-self: flex-end; }
       .typing-bubble { flex-direction: row; gap: 6px; align-items: center; padding: 12px; }
@@ -125,11 +120,7 @@
         appId: "1:20850150249:web:92d64b1c00ac68f8fe0bf8",
         measurementId: "G-NJTHTJ8DM5"
       };
-      const demoUsers = [
-        { id: 'user-ava', name: 'Ava Chen', email: 'ava@example.com', role: 'Product Design', color: '#7c6cf7' },
-        { id: 'user-noah', name: 'Noah Singh', email: 'noah@example.com', role: 'Growth Lead', color: '#24c0cb' },
-        { id: 'user-mina', name: 'Mina Alvarez', email: 'mina@example.com', role: 'Community Manager', color: '#ff7c5c' },
-      ];
+      const demoUsers = [];
 
       function createId(prefix) {
         return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -140,10 +131,11 @@
       function formatTime(timestamp) {
         return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       }
-      function buildReply(text) {
-        if (!text) return 'That sounds great — I am ready when you are.';
-        if (/image|photo|screenshot/i.test(text)) return 'Perfect, I can review this with you right away.';
-        return `I saw your note: “${text}”. Let’s keep moving.`;
+
+      function isHiddenContact(user) {
+        const hiddenNames = ['ava chen', 'noah singh', 'mina alvarez'];
+        const name = String(user?.name || '').trim().toLowerCase();
+        return hiddenNames.some((hiddenName) => name.includes(hiddenName));
       }
 
       const state = {
@@ -151,18 +143,41 @@
         authLoading: false,
         authError: '',
         authMessage: '',
-        users: demoUsers,
+        users: [],
         currentUser: null,
         conversations: {},
         activeContactId: null,
         draft: '',
-        typing: false,
         error: '',
         selectedImage: '',
         discoverQuery: '',
         friends: [],
         friendRequests: [],
       };
+      let hasSyncedConversations = false;
+      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+
+      function playNotificationSound(type = 'send') {
+        if (!audioContext) return;
+        const frequency = type === 'receive' ? 520 : 760;
+        const duration = type === 'receive' ? 0.12 : 0.08;
+        const gainNode = audioContext.createGain();
+        const oscillator = audioContext.createOscillator();
+
+        oscillator.type = 'sine';
+        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
+        gainNode.gain.setValueAtTime(0.14, audioContext.currentTime);
+
+        oscillator.connect(gainNode);
+        gainNode.connect(audioContext.destination);
+
+        if (audioContext.state === 'suspended') {
+          audioContext.resume();
+        }
+
+        oscillator.start();
+        oscillator.stop(audioContext.currentTime + duration);
+      }
 
       const app = document.getElementById('app');
       let firebaseAuth = null;
@@ -225,7 +240,7 @@
         usersSyncRef = (snapshot) => {
           const values = snapshot.val() || {};
           const remoteUsers = Object.values(values).filter(Boolean);
-          const mergedUsers = [...demoUsers];
+          const mergedUsers = [...state.users];
 
           remoteUsers.forEach((entry) => {
             const normalized = {
@@ -243,7 +258,7 @@
             }
           });
 
-          state.users = mergedUsers;
+          state.users = mergedUsers.filter((user) => !isHiddenContact(user));
           if (state.currentUser) {
             const refreshed = state.users.find((user) => user.id === state.currentUser.id || user.email === state.currentUser.email);
             if (refreshed) {
@@ -276,6 +291,8 @@
         conversationsSyncRef = (snapshot) => {
           const rooms = snapshot.val() || {};
           const normalizedConversations = {};
+          const previousConversations = state.conversations || {};
+          let shouldPlayReceive = false;
 
           Object.entries(rooms).forEach(([roomKey, roomMessages]) => {
             if (!roomMessages) return;
@@ -283,11 +300,23 @@
               ? roomMessages
               : Object.values(roomMessages).filter(Boolean);
             normalizedConversations[roomKey] = messages.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
+
+            const previousMessages = previousConversations[roomKey] || [];
+            if (hasSyncedConversations && state.currentUser && normalizedConversations[roomKey].length > previousMessages.length) {
+              const newMessages = normalizedConversations[roomKey].slice(previousMessages.length);
+              if (newMessages.some((msg) => msg.senderId !== state.currentUser.id)) {
+                shouldPlayReceive = true;
+              }
+            }
           });
 
           state.conversations = normalizedConversations;
           persist();
           render();
+          if (shouldPlayReceive) {
+            playNotificationSound('receive');
+          }
+          hasSyncedConversations = true;
         };
 
         firebaseDatabase.ref('conversations').on('value', conversationsSyncRef);
@@ -345,22 +374,6 @@
                 <h3>Active rooms</h3>
                 <button class="ghost-btn" id="logout">Logout</button>
               </div>
-              <div class="discover-panel">
-                <strong>Find friends</strong>
-                <input id="discover-query" value="${state.discoverQuery}" placeholder="Search by name or email">
-                <div>
-                  ${(() => {
-                    const visibleUsers = state.users.filter((user) => user.id !== state.currentUser.id);
-                    const matches = visibleUsers.filter((user) => {
-                      if (!state.discoverQuery) return true;
-                      const text = `${user.name} ${user.email}`.toLowerCase();
-                      return text.includes(state.discoverQuery.toLowerCase());
-                    });
-                    return matches.length ? matches.map((user) => `<div class="discover-item"><span>${user.name}</span><button class="ghost-btn" data-add-friend="${user.id}">Add</button></div>`).join('') : '<p class="helper-text">No people found.</p>';
-                  })()}
-                </div>
-              </div>
-              ${state.friendRequests.length ? `<div class="friend-request-card"><div><strong>Friend requests</strong><p class="helper-text">${state.friendRequests.length} pending</p></div><button id="view-requests">Review</button></div>` : ''}
               <div class="contact-list">
                 ${contacts.map((contact) => {
                   const room = [state.currentUser.id, contact.id].sort().join('-');
@@ -391,7 +404,6 @@
                   const mine = message.senderId === state.currentUser.id;
                   return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<span>${formatTime(message.createdAt)}</span></div></div>`;
                 }).join('') : '<div class="empty-state">Pick a contact to begin chatting.</div>'}
-                ${state.typing ? `<div class="message-row"><div class="bubble typing-bubble"><span></span><span></span><span></span></div></div>` : ''}
               </div>
               <form class="composer" id="composer-form">
                 ${state.selectedImage ? `<div class="preview-card"><img src="${state.selectedImage}" alt="Preview"><button type="button" class="ghost-btn" id="remove-image">Remove</button></div>` : ''}
@@ -406,25 +418,6 @@
           </div>`;
 
         document.getElementById('logout').addEventListener('click', handleLogout);
-        document.getElementById('discover-query')?.addEventListener('input', (event) => {
-          state.discoverQuery = event.target.value;
-          render();
-        });
-        document.querySelectorAll('[data-add-friend]').forEach((button) => {
-          button.addEventListener('click', () => {
-            sendFriendRequest(button.dataset.addFriend);
-          });
-        });
-        document.getElementById('view-requests')?.addEventListener('click', () => {
-          const request = state.friendRequests[0];
-          if (!request) return;
-          const action = window.confirm(`${request.name} wants to be your friend. Accept?`);
-          if (action) {
-            acceptFriendRequest(request.id);
-          } else {
-            declineFriendRequest(request.id);
-          }
-        });
         document.querySelectorAll('[data-contact]').forEach((button) => {
           button.addEventListener('click', () => {
             state.activeContactId = button.dataset.contact;
@@ -452,13 +445,13 @@
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
-            state.users = parsed.users || demoUsers;
+            state.users = (parsed.users || []).filter((user) => !isHiddenContact(user));
             state.conversations = parsed.conversations || {};
             state.activeContactId = parsed.activeContactId || null;
             state.friends = parsed.friends || [];
             state.friendRequests = parsed.friendRequests || [];
           } catch {
-            state.users = demoUsers;
+            state.users = [];
           }
         }
 
@@ -596,9 +589,9 @@
         const outgoing = { id: createId('msg'), senderId: state.currentUser.id, text: cleanText, image: state.selectedImage, createdAt: new Date().toISOString() };
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
+        playNotificationSound('send');
         state.draft = '';
         state.selectedImage = '';
-        state.typing = false;
         persist();
         render();
 

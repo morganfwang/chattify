@@ -1,35 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
 const STORAGE_KEY = 'pulsechat-state-v1';
-const demoUsers = [
-  {
-    id: 'user-ava',
-    name: 'Ava Chen',
-    username: 'ava',
-    email: 'ava@example.com',
-    password: 'pass123',
-    role: 'Product Design',
-    color: '#7c6cf7',
-  },
-  {
-    id: 'user-noah',
-    name: 'Noah Singh',
-    username: 'noah',
-    email: 'noah@example.com',
-    password: 'pass123',
-    role: 'Growth Lead',
-    color: '#24c0cb',
-  },
-  {
-    id: 'user-mina',
-    name: 'Mina Alvarez',
-    username: 'mina',
-    email: 'mina@example.com',
-    password: 'pass123',
-    role: 'Community Manager',
-    color: '#ff7c5c',
-  },
-];
+const demoUsers = [];
 
 function createId(prefix) {
   return `${prefix}-${Math.random().toString(36).slice(2, 10)}`;
@@ -51,18 +23,6 @@ function formatTime(timestamp) {
   });
 }
 
-function buildReply(text) {
-  if (!text) {
-    return 'That sounds great — I am ready when you are.';
-  }
-
-  if (/image|photo|screenshot/i.test(text)) {
-    return 'Perfect, I can review this with you right away.';
-  }
-
-  return `I saw your note: “${text}”. Let’s keep this moving.`;
-}
-
 export default function App() {
   const [ready, setReady] = useState(false);
   const [mode, setMode] = useState('login');
@@ -77,7 +37,6 @@ export default function App() {
   const [chats, setChats] = useState({});
   const [activeContactId, setActiveContactId] = useState(null);
   const [draft, setDraft] = useState('');
-  const [typing, setTyping] = useState(false);
   const [messageError, setMessageError] = useState('');
   const [feedback, setFeedback] = useState('');
   const [selectedImage, setSelectedImage] = useState('');
@@ -128,7 +87,7 @@ export default function App() {
   }, [currentUser, users, activeContactId]);
 
   function seedDemoData() {
-    setUsers(demoUsers);
+    setUsers([]);
     setChats({});
     setCurrentUser(null);
     setActiveContactId(null);
@@ -232,23 +191,6 @@ export default function App() {
     setDraft('');
     setSelectedImage('');
     if (fileInputRef.current) fileInputRef.current.value = '';
-    setTyping(true);
-
-    window.setTimeout(() => {
-      const incomingMessage = {
-        id: createId('msg'),
-        senderId: activeContact.id,
-        text: buildReply(cleanText),
-        image: '',
-        createdAt: new Date().toISOString(),
-      };
-
-      setChats((previous) => ({
-        ...previous,
-        [roomKey]: [...(previous[roomKey] || []), incomingMessage],
-      }));
-      setTyping(false);
-    }, 900);
   }
 
   function handleImageSelect(event) {
@@ -440,15 +382,6 @@ export default function App() {
             <div className="empty-state">Pick a contact to begin chatting.</div>
           )}
 
-          {typing && (
-            <div className="message-row">
-              <div className="bubble typing-bubble">
-                <span />
-                <span />
-                <span />
-              </div>
-            </div>
-          )}
         </div>
 
         <form className="composer" onSubmit={handleSend}>
