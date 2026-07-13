@@ -58,9 +58,16 @@
       .online-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3ee98f; box-shadow: 0 0 0 4px rgba(62, 233, 143, 0.2); display: inline-block; }
       .section-header { display: flex; justify-content: space-between; align-items: center; }
       .ghost-btn { background: transparent; border: 1px solid rgba(255,255,255,0.12); color: #dce4ff; padding: 8px 10px; border-radius: 999px; }
-      .contact-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; }
-      .contact-card { border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: inherit; padding: 10px; border-radius: 14px; display: flex; gap: 10px; align-items: center; text-align: left; }
+      .contact-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; padding-right: 2px; }
+      .room-row { position: relative; display: flex; align-items: center; gap: 8px; min-height: 72px; }
+      .contact-card { border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.03); color: inherit; padding: 10px; border-radius: 14px; display: flex; gap: 10px; align-items: center; text-align: left; flex: 1; min-height: 72px; max-height: 72px; overflow: hidden; }
       .contact-card.active { border-color: #7c6cf7; background: rgba(124,108,247,0.16); }
+      .room-menu-wrapper { position: relative; flex-shrink: 0; }
+      .room-menu-btn { width: 36px; height: 36px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #f2f5ff; font-size: 1.1rem; line-height: 1; }
+      .chat-menu { position: absolute; right: 0; top: calc(100% + 6px); min-width: 140px; display: flex; flex-direction: column; gap: 6px; padding: 8px; background: rgba(8, 14, 33, 0.96); border: 1px solid rgba(255,255,255,0.12); border-radius: 12px; box-shadow: 0 12px 30px rgba(0,0,0,0.28); z-index: 10; }
+      .chat-menu button { border: 0; background: transparent; color: #f3f6ff; padding: 8px 10px; border-radius: 8px; text-align: left; }
+      .chat-menu button:hover { background: rgba(255,255,255,0.08); }
+      .chat-menu .menu-danger { color: #ff8a8a; }
       .contact-body { flex: 1; min-width: 0; }
       .contact-topline { display: flex; justify-content: space-between; gap: 10px; font-size: 0.95rem; }
       .contact-body p { color: #9da8cf; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -175,6 +182,10 @@
         discoverQuery: '',
         friends: [],
         friendRequests: [],
+        renameModalOpen: false,
+        renameTargetRoomKey: null,
+        renameDraft: '',
+        activeRoomMenuKey: null,
       };
       let hasSyncedConversations = false;
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -206,6 +217,7 @@
       let firebaseDatabase = null;
       let usersSyncRef = null;
       let conversationsSyncRef = null;
+      let roomMetaSyncRef = null;
 
       function normalizeUser(user) {
         return {
@@ -276,8 +288,17 @@
               photoURL: entry.photoURL || '',
               role: entry.role || 'Authenticated with Google',
               color: entry.color || '#7c6cf7',
+              rooms: entry.rooms || [],
             };
-            if (!mergedUsers.some((user) => user.id === normalized.id || user.email === normalized.email)) {
+
+            const existingIndex = mergedUsers.findIndex((user) => user.id === normalized.id || user.email === normalized.email);
+            if (existingIndex >= 0) {
+              mergedUsers[existingIndex] = {
+                ...mergedUsers[existingIndex],
+                ...normalized,
+                rooms: normalized.rooms || mergedUsers[existingIndex].rooms || [],
+              };
+            } else {
               mergedUsers.push(normalized);
             }
           });
@@ -304,6 +325,29 @@
           lastSeen: Date.now(),
         });
         userRef.onDisconnect().remove();
+      }
+
+      function syncRoomMetaFromDatabase() {
+        if (!firebaseDatabase) return;
+        if (roomMetaSyncRef) {
+          firebaseDatabase.ref('roomMeta').off('value', roomMetaSyncRef);
+        }
+
+        roomMetaSyncRef = (snapshot) => {
+          const values = snapshot.val() || {};
+          const normalizedRoomMeta = {};
+
+          Object.entries(values).forEach(([roomKey, meta]) => {
+            if (!meta) return;
+            normalizedRoomMeta[roomKey] = meta;
+          });
+
+          state.roomMeta = normalizedRoomMeta;
+          persist();
+          render();
+        };
+
+        firebaseDatabase.ref('roomMeta').on('value', roomMetaSyncRef);
       }
 
       function syncConversationsFromDatabase() {
@@ -387,7 +431,11 @@
           }),
           ...Object.entries(state.roomMeta)
             .filter(([, meta]) => meta.type === 'group')
-            .filter(([roomKey, meta]) => meta.memberIds?.includes(state.currentUser.id) || joinedRoomKeys.has(roomKey))
+            .filter(([roomKey]) => {
+              const memberIds = state.roomMeta[roomKey]?.memberIds || [];
+              const hasMembership = memberIds.includes(state.currentUser.id) || joinedRoomKeys.has(roomKey);
+              return hasMembership;
+            })
             .map(([roomKey, meta]) => ({ roomKey, type: 'group', name: meta.name || 'New group', memberIds: meta.memberIds || [], contactId: null }))
         ];
         const activeRoomKey = state.activeRoomKey || directRoomKey;
@@ -419,13 +467,24 @@
                   const isActive = activeRoom && room.roomKey === activeRoom.roomKey;
                   const roomColor = room.type === 'group' ? '#24c0cb' : '#7c6cf7';
                   return `
-                    <button class="contact-card ${isActive ? 'active' : ''}" data-room="${room.roomKey}" data-contact="${room.contactId || ''}">
-                      <div class="avatar small" style="background:${roomColor}">${getInitials(room.name)}</div>
-                      <div class="contact-body">
-                        <div class="contact-topline"><strong>${room.name}</strong><span>${lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span></div>
-                        <p>${room.type === 'group' ? `${room.memberIds.length} members` : (lastMessage?.text || 'Start a fresh conversation')}</p>
+                    <div class="room-row">
+                      <button class="contact-card ${isActive ? 'active' : ''}" data-room="${room.roomKey}" data-contact="${room.contactId || ''}">
+                        <div class="avatar small" style="background:${roomColor}">${getInitials(room.name)}</div>
+                        <div class="contact-body">
+                          <div class="contact-topline"><strong>${room.name}</strong><span>${lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span></div>
+                          <p>${room.type === 'group' ? `${room.memberIds.length} members` : (lastMessage?.text || 'Start a fresh conversation')}</p>
+                        </div>
+                      </button>
+                      <div class="room-menu-wrapper">
+                        <button class="room-menu-btn" type="button" data-room-menu-toggle="${room.roomKey}" aria-label="Chat options">⋯</button>
+                        ${state.activeRoomMenuKey === room.roomKey ? `
+                          <div class="chat-menu">
+                            <button type="button" data-room-rename="${room.roomKey}">Rename</button>
+                            <button type="button" data-room-pin="${room.roomKey}">Pin chat</button>
+                            <button type="button" class="menu-danger" data-room-delete="${room.roomKey}">Delete</button>
+                          </div>` : ''}
                       </div>
-                    </button>`;
+                    </div>`;
                 }).join('')}
               </div>
             </aside>
@@ -437,16 +496,14 @@
                   ${activeRoom?.type === 'group' ? `<p class="room-subtitle">${activeRoom.memberIds.map((memberId) => state.users.find((user) => user.id === memberId)?.name).filter(Boolean).join(', ')}</p>` : ''}
                 </div>
                 <div class="header-actions">
-                  <button class="ghost-btn" id="select-accounts" type="button">Select Accounts</button>
-                  ${state.detectiveMode ? `<label class="detective-controls"><span>Send as</span><select id="impersonate-select">${state.users.map((user) => `<option value="${user.id}" ${user.id === (state.impersonatedUserId || state.currentUser.id) ? 'selected' : ''}>${user.name}</option>`).join('')}</select></label>` : ''}
-                  <button class="ghost-btn ${state.detectiveMode ? 'detective-active' : ''}" id="detective-toggle" type="button">${state.detectiveMode ? 'Detective On' : 'Detective'}</button>
+                  <button class="ghost-btn" id="select-accounts" type="button">Create Group</button>
                   <div class="header-badge">Live • Protected</div>
                 </div>
               </header>
               <div class="message-list">
                 ${activeRoom ? messages.map((message) => {
                   const mine = message.senderId === state.currentUser.id;
-                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span>${state.detectiveMode ? `<button type="button" class="delete-btn" data-delete-message="${message.id}">Delete</button>` : ''}</div></div></div>`;
+                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span></div></div></div>`;
                 }).join('') : '<div class="empty-state">Pick a room to begin chatting.</div>'}
               </div>
               <form class="composer" id="composer-form">
@@ -459,11 +516,28 @@
               </form>
               ${state.error ? `<p class="status error">${state.error}</p>` : ''}
             </main>
+            ${state.renameModalOpen ? `
+              <div class="modal-backdrop">
+                <div class="modal-card">
+                  <div class="modal-header">
+                    <h3>Rename chat</h3>
+                    <button class="ghost-btn" id="close-rename-modal" type="button">Close</button>
+                  </div>
+                  <label class="modal-label">
+                    New chat name
+                    <input id="rename-room-input" value="${state.renameDraft}" placeholder="Enter a new name">
+                  </label>
+                  <div class="modal-actions">
+                    <button class="ghost-btn" id="cancel-rename-modal" type="button">Cancel</button>
+                    <button class="primary-btn" id="save-rename-modal" type="button">Save name</button>
+                  </div>
+                </div>
+              </div>` : ''}
             ${state.groupModalOpen ? `
               <div class="modal-backdrop">
                 <div class="modal-card">
                   <div class="modal-header">
-                    <h3>Select accounts</h3>
+                    <h3>Create group</h3>
                     <button class="ghost-btn" id="close-group-modal" type="button">Close</button>
                   </div>
                   <label class="modal-label">
@@ -486,10 +560,11 @@
           </div>`;
 
         document.getElementById('logout').addEventListener('click', handleLogout);
-        document.getElementById('detective-toggle').addEventListener('click', handleDetectiveAccess);
-        document.getElementById('impersonate-select')?.addEventListener('change', (event) => {
-          state.impersonatedUserId = event.target.value;
-          render();
+        document.getElementById('close-rename-modal')?.addEventListener('click', closeRenameModal);
+        document.getElementById('cancel-rename-modal')?.addEventListener('click', closeRenameModal);
+        document.getElementById('save-rename-modal')?.addEventListener('click', saveRoomRename);
+        document.getElementById('rename-room-input')?.addEventListener('input', (event) => {
+          state.renameDraft = event.target.value;
         });
         document.getElementById('select-accounts').addEventListener('click', () => {
           state.groupModalOpen = true;
@@ -514,12 +589,36 @@
           button.addEventListener('click', () => {
             state.activeRoomKey = button.dataset.room;
             state.activeContactId = button.dataset.contact || null;
+            state.activeRoomMenuKey = null;
             render();
           });
         });
-        document.querySelectorAll('[data-delete-message]').forEach((button) => {
-          button.addEventListener('click', () => {
-            handleDeleteMessage(button.dataset.deleteMessage);
+        document.querySelectorAll('[data-room-menu-toggle]').forEach((button) => {
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            const roomKey = button.dataset.roomMenuToggle;
+            state.activeRoomMenuKey = state.activeRoomMenuKey === roomKey ? null : roomKey;
+            render();
+          });
+        });
+        document.querySelectorAll('[data-room-rename]').forEach((button) => {
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            openRenameRoomModal(button.dataset.roomRename);
+          });
+        });
+        document.querySelectorAll('[data-room-pin]').forEach((button) => {
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            state.authMessage = 'Chat pinned.';
+            state.activeRoomMenuKey = null;
+            render();
+          });
+        });
+        document.querySelectorAll('[data-room-delete]').forEach((button) => {
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            deleteGroupRoom(button.dataset.roomDelete);
           });
         });
         document.getElementById('composer-form').addEventListener('submit', (event) => {
@@ -536,6 +635,23 @@
             render();
           });
         }
+      }
+
+      function syncGroupMembershipsToDatabase(roomKey, memberIds) {
+        if (!firebaseDatabase || !roomKey) return;
+
+        const roomMetaRef = firebaseDatabase.ref(`roomMeta/${roomKey}`);
+        roomMetaRef.set(state.roomMeta[roomKey]);
+
+        const conversationRef = firebaseDatabase.ref(`conversations/${roomKey}`);
+        conversationRef.set(state.conversations[roomKey] || []);
+
+        memberIds.forEach((memberId) => {
+          const user = state.users.find((entry) => entry.id === memberId);
+          const currentRooms = user?.rooms || [];
+          const nextRooms = currentRooms.includes(roomKey) ? currentRooms : [...currentRooms, roomKey];
+          firebaseDatabase.ref(`users/${memberId}/rooms`).set(nextRooms);
+        });
       }
 
       function bootstrap() {
@@ -569,6 +685,7 @@
         firebaseAuth = firebase.auth();
         firebaseDatabase = firebase.database();
         syncUsersFromDatabase();
+        syncRoomMetaFromDatabase();
         syncConversationsFromDatabase();
         firebaseAuth.onAuthStateChanged((user) => {
           state.authReady = true;
@@ -706,6 +823,56 @@
         render();
       }
 
+      function openRenameRoomModal(roomKey) {
+        const roomMeta = state.roomMeta[roomKey];
+        if (!roomMeta || roomMeta.type !== 'group') return;
+        state.renameTargetRoomKey = roomKey;
+        state.renameDraft = roomMeta.name || 'New group';
+        state.renameModalOpen = true;
+        render();
+      }
+
+      function closeRenameModal() {
+        state.renameModalOpen = false;
+        state.renameTargetRoomKey = null;
+        state.renameDraft = '';
+        render();
+      }
+
+      function saveRoomRename() {
+        const trimmed = state.renameDraft.trim();
+        if (!state.renameTargetRoomKey || !trimmed) return;
+        state.roomMeta[state.renameTargetRoomKey] = {
+          ...(state.roomMeta[state.renameTargetRoomKey] || {}),
+          name: trimmed,
+        };
+        state.authMessage = 'Chat renamed.';
+        state.renameModalOpen = false;
+        state.renameTargetRoomKey = null;
+        state.renameDraft = '';
+        persist();
+        render();
+      }
+
+      function deleteGroupRoom(roomKey) {
+        if (!roomKey) return;
+        delete state.roomMeta[roomKey];
+        delete state.conversations[roomKey];
+        state.currentUser.rooms = (state.currentUser.rooms || []).filter((joinedRoomKey) => joinedRoomKey !== roomKey);
+        state.users = state.users.map((user) => {
+          if (user.id !== state.currentUser.id) return user;
+          return { ...user, rooms: (user.rooms || []).filter((joinedRoomKey) => joinedRoomKey !== roomKey) };
+        });
+        if (state.activeRoomKey === roomKey) {
+          const fallbackRoomKey = Object.keys(state.roomMeta).find((key) => state.roomMeta[key]?.type === 'group' || state.roomMeta[key]?.type === 'direct');
+          state.activeRoomKey = fallbackRoomKey || null;
+        }
+        state.activeRoomMenuKey = null;
+        state.authMessage = 'Chat removed from your messages.';
+        persist();
+        render();
+      }
+
       function createGroupChat() {
         if (!state.currentUser) return;
         if (state.selectedGroupMembers.length < 2) {
@@ -741,6 +908,7 @@
         state.groupName = '';
         state.selectedGroupMembers = [];
         state.error = '';
+        syncGroupMembershipsToDatabase(roomKey, memberIds);
         persist();
         render();
       }
