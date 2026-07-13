@@ -97,6 +97,7 @@
       .bubble.mine { background: linear-gradient(135deg, rgba(124,108,247,0.95), rgba(36,192,203,0.86)); border-radius: 16px 16px 6px 16px; }
       .bubble p { color: #f9fbff; margin: 0; white-space: pre-wrap; overflow-wrap: break-word; word-break: break-word; }
       .bubble img { width: 100%; max-height: 220px; object-fit: cover; border-radius: 12px; }
+      .sender-name { font-size: 0.78rem; font-weight: 700; color: #dce8ff; margin-bottom: 2px; }
       .bubble span { font-size: 0.75rem; color: rgba(255,255,255,0.72); align-self: flex-end; }
       .typing-bubble { flex-direction: row; gap: 6px; align-items: center; padding: 12px; }
       .typing-bubble span { width: 8px; height: 8px; border-radius: 50%; background: white; display: inline-block; animation: pulse 1s infinite ease-in-out; }
@@ -503,7 +504,9 @@
               <div class="message-list">
                 ${activeRoom ? messages.map((message) => {
                   const mine = message.senderId === state.currentUser.id;
-                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span></div></div></div>`;
+                  const sender = state.users.find((user) => user.id === message.senderId);
+                  const senderLabel = sender?.name || 'Unknown account';
+                  return `<div class="message-row ${mine ? 'mine' : ''}"><div class="bubble ${mine ? 'mine' : ''}">${!mine ? `<div class="sender-name">${senderLabel}</div>` : ''}${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span></div></div></div>`;
                 }).join('') : '<div class="empty-state">Pick a room to begin chatting.</div>'}
               </div>
               <form class="composer" id="composer-form">
