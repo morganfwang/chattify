@@ -51,6 +51,20 @@
       .dashboard-shell { align-items: flex-start; padding: 18px; }
       .sidebar { width: min(100%, 360px); border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; position: sticky; top: 18px; max-height: calc(100vh - 36px); overflow: auto; }
       .profile-card { display: flex; gap: 12px; align-items: center; padding: 14px; border-radius: 16px; background: rgba(255,255,255,0.04); }
+      .profile-card.clickable { cursor: pointer; transition: transform 160ms ease, background 160ms ease; }
+      .profile-card.clickable:hover { transform: translateY(-1px); background: rgba(255,255,255,0.07); }
+      .profile-page { width: min(100%, 860px); max-height: calc(100vh - 40px); overflow: auto; padding: 24px; border-radius: 24px; background: rgba(6, 12, 31, 0.95); border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 24px 70px rgba(0,0,0,0.35); color: #f4f7ff; }
+      .profile-hero { display: flex; gap: 20px; align-items: center; margin-bottom: 20px; flex-wrap: wrap; }
+      .profile-hero .avatar { width: 88px; height: 88px; font-size: 1.4rem; }
+      .profile-badge { display: inline-flex; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 12px; border-radius: 999px; background: rgba(36,192,203,0.16); color: #86f3ff; font-size: 0.9rem; }
+      .profile-grid { display: grid; gap: 16px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+      .profile-card-panel { background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 16px; }
+      .profile-list { display: grid; gap: 8px; margin-top: 10px; }
+      .profile-list li { color: #dce6ff; line-height: 1.6; }
+      .profile-tags { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+      .profile-tags span { padding: 8px 10px; border-radius: 999px; background: rgba(124,108,247,0.2); color: #d8d2ff; font-size: 0.9rem; }
+      .profile-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 20px; }
+      @media (max-width: 700px) { .profile-grid { grid-template-columns: 1fr; } }
       .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: white; overflow: hidden; }
       .avatar.small { width: 40px; height: 40px; font-size: 0.9rem; }
       .avatar img { width: 100%; height: 100%; object-fit: cover; }
@@ -166,6 +180,8 @@
         authLoading: false,
         authError: '',
         authMessage: '',
+        profileOpen: false,
+        profileUserId: null,
         users: [],
         currentUser: null,
         conversations: {},
@@ -420,6 +436,64 @@
           return;
         }
 
+        if (state.profileOpen) {
+          const profileUser = state.users.find((user) => user.id === state.profileUserId) || state.currentUser;
+          const profileName = profileUser?.name || 'Profile';
+          const profileRole = profileUser?.role || 'Member';
+          const profileInitials = getInitials(profileName);
+          const bjjNote = 'Only you and Connor Student do Brazilian Jiu-Jitsu.';
+          app.innerHTML = `
+            <div class="app-shell">
+              <div class="profile-page">
+                <div class="profile-hero">
+                  <div class="avatar" style="background:${profileUser?.color || '#7c6cf7'}">${profileUser?.photoURL ? `<img src="${profileUser.photoURL}" alt="${profileName}">` : profileInitials}</div>
+                  <div>
+                    <p class="eyebrow">Profile page</p>
+                    <h1>${profileName}</h1>
+                    <p>${profileRole}</p>
+                    <div class="profile-badge">🌟 ${profileName === state.currentUser?.name ? 'Your profile' : 'Contact profile'}</div>
+                  </div>
+                </div>
+                <div class="profile-grid">
+                  <div class="profile-card-panel">
+                    <h3>About</h3>
+                    <p style="margin-top:8px; color:#dce6ff; line-height:1.7;">${profileName === state.currentUser?.name ? 'This is your personal profile page with your favorite activities and achievements.' : `This is ${profileName}'s profile page.`}</p>
+                  </div>
+                  <div class="profile-card-panel">
+                    <h3>Highlights</h3>
+                    <div class="profile-tags">
+                      <span>🎮 Roblox</span>
+                      <span>🥋 Brazilian Jiu-Jitsu</span>
+                      <span>💬 Chatting</span>
+                    </div>
+                  </div>
+                  <div class="profile-card-panel">
+                    <h3>Activities</h3>
+                    <ul class="profile-list">
+                      <li>🎮 Loves gaming and connecting with friends</li>
+                      <li>🗣️ Enjoys chatting in group rooms</li>
+                      <li>⭐ Active in PulseChat</li>
+                    </ul>
+                  </div>
+                  <div class="profile-card-panel">
+                    <h3>Quick note</h3>
+                    <p style="margin-top:8px; color:#dce6ff; line-height:1.7;">${profileName === state.currentUser?.name ? `${bjjNote} You can come back here anytime from your profile card.` : `${bjjNote} You can view ${profileName}'s shared details here.`}</p>
+                  </div>
+                </div>
+                <div class="profile-actions">
+                  <button class="ghost-btn" id="close-profile-page" type="button">Back</button>
+                </div>
+              </div>
+            </div>`;
+
+          document.getElementById('close-profile-page').addEventListener('click', () => {
+            state.profileOpen = false;
+            state.profileUserId = null;
+            render();
+          });
+          return;
+        }
+
         const contacts = state.users.filter((user) => user.id !== state.currentUser.id);
         const joinedRoomKeys = new Set(state.currentUser.rooms || []);
         const activeContact = contacts.find((contact) => contact.id === state.activeContactId) || contacts[0] || null;
@@ -446,7 +520,7 @@
         app.innerHTML = `
           <div class="app-shell dashboard-shell">
             <aside class="sidebar">
-              <div class="profile-card">
+              <div class="profile-card clickable" id="open-profile-page">
                 <div class="avatar" style="background:${state.currentUser.color}">
                   ${state.currentUser.photoURL ? `<img src="${state.currentUser.photoURL}" alt="${state.currentUser.name}">` : getInitials(state.currentUser.name)}
                 </div>
@@ -469,7 +543,7 @@
                   const roomColor = room.type === 'group' ? '#24c0cb' : '#7c6cf7';
                   return `
                     <div class="room-row">
-                      <button class="contact-card ${isActive ? 'active' : ''}" data-room="${room.roomKey}" data-contact="${room.contactId || ''}">
+                      <button class="contact-card ${isActive ? 'active' : ''}" data-room="${room.roomKey}" data-contact="${room.contactId || ''}" data-profile-user="${room.contactId || state.currentUser.id}">
                         <div class="avatar small" style="background:${roomColor}">${getInitials(room.name)}</div>
                         <div class="contact-body">
                           <div class="contact-topline"><strong>${room.name}</strong><span>${lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span></div>
@@ -562,6 +636,11 @@
               </div>` : ''}
           </div>`;
 
+        document.getElementById('open-profile-page')?.addEventListener('click', () => {
+          state.profileOpen = true;
+          state.profileUserId = state.currentUser.id;
+          render();
+        });
         document.getElementById('logout').addEventListener('click', handleLogout);
         document.getElementById('close-rename-modal')?.addEventListener('click', closeRenameModal);
         document.getElementById('cancel-rename-modal')?.addEventListener('click', closeRenameModal);
@@ -590,6 +669,13 @@
         });
         document.querySelectorAll('[data-room]').forEach((button) => {
           button.addEventListener('click', () => {
+            if (button.dataset.profileUser) {
+              state.profileOpen = true;
+              state.profileUserId = button.dataset.profileUser;
+              state.activeRoomMenuKey = null;
+              render();
+              return;
+            }
             state.activeRoomKey = button.dataset.room;
             state.activeContactId = button.dataset.contact || null;
             state.activeRoomMenuKey = null;
