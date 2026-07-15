@@ -1827,7 +1827,7 @@
           id: createId('msg'),
           senderId,
           text: cleanText,
-          image: '',
+          image: state.selectedImage || '',
           createdAt: Date.now(),
           localCreatedAt: Date.now(),
           status: 'pending',
@@ -1835,7 +1835,6 @@
 
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
         ensureRoomMessageState(roomKey);
-        roomMessageIds[roomKey].add(outgoing.id);
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
         setTypingStatus(roomKey, false);
         state.isDraftEditing = false;
@@ -1871,6 +1870,10 @@
             .then((compressedBlob) => uploadImageFile(compressedBlob, roomKey))
             .then((downloadUrl) => {
               sendPayload.image = downloadUrl;
+              state.conversations[roomKey] = (state.conversations[roomKey] || []).map((message) =>
+                message.id === outgoing.id ? { ...message, image: downloadUrl, status: 'sent' } : message
+              );
+              render();
               sendToFirebase();
             })
             .catch((error) => {
