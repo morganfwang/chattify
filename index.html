@@ -68,13 +68,39 @@
       .avatar { width: 46px; height: 46px; border-radius: 50%; display: grid; place-items: center; font-weight: 700; color: white; overflow: hidden; }
       .avatar.small { width: 40px; height: 40px; font-size: 0.9rem; }
       .avatar img { width: 100%; height: 100%; object-fit: cover; }
-      .online-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.8rem; color: #7ee3b4; }
-      .online-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3ee98f; box-shadow: 0 0 0 4px rgba(62, 233, 143, 0.2); display: inline-block; }
+      .online-pill {
+        display: inline-flex;
+        align-items: center;
+        margin-top: 8px;
+        min-height: 14px;
+        line-height: 1;
+      }
+      .online-pill::before {
+        content: '';
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #3ee98f;
+        box-shadow: 0 0 0 5px rgba(62, 233, 143, 0.24), 0 0 12px rgba(62, 233, 143, 0.7);
+        display: inline-block;
+        transform: translateY(-1px);
+      }
       .presence-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: #9da8cf; white-space: nowrap; }
       .presence-badge.online { color: #7ee3b4; }
       .presence-badge.offline { color: #93a0c2; }
-      .presence-dot { width: 8px; height: 8px; border-radius: 50%; background: #6e7898; display: inline-block; flex-shrink: 0; }
-      .presence-dot.online { background: #3ee98f; box-shadow: 0 0 0 3px rgba(62, 233, 143, 0.16); }
+      .presence-dot {
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: #6e7898;
+        display: inline-block;
+        flex-shrink: 0;
+        transform: translateY(-1px);
+      }
+      .presence-dot.online {
+        background: #3ee98f;
+        box-shadow: 0 0 0 4px rgba(62, 233, 143, 0.18), 0 0 12px rgba(62, 233, 143, 0.7);
+      }
       .presence-dot.offline { background: #7a829d; box-shadow: none; }
       .presence-inline { margin-top: 4px; font-size: 0.82rem; color: #97a2c6; }
       .typing-indicator { display: inline-flex; align-items: center; gap: 6px; color: #86f3ff; font-size: 0.84rem; margin-top: 6px; }
@@ -447,6 +473,7 @@
           state.isDraftEditing = true;
           state.draft = draftField.value;
           setTypingStatus(getActiveRoomKey(), Boolean(state.draft.trim()));
+          renderTypingIndicator();
           syncDraftFieldState();
         });
 
@@ -463,6 +490,7 @@
           if (event.target instanceof HTMLTextAreaElement && event.target.id === 'draft') {
             state.isDraftEditing = true;
             setTypingStatus(getActiveRoomKey(), Boolean(state.draft.trim()));
+            renderTypingIndicator();
           }
         });
 
@@ -470,6 +498,7 @@
           if (event.target instanceof HTMLTextAreaElement && event.target.id === 'draft') {
             state.isDraftEditing = false;
             setTypingStatus(getActiveRoomKey(), false);
+            renderTypingIndicator();
           }
         });
       }
@@ -507,7 +536,7 @@
       function getPresenceMarkup(userId, compact = false) {
         const presence = getUserPresence(userId);
         const isOnline = presence.status === 'online';
-        const statusText = isOnline ? 'Online' : (compact ? 'Offline' : formatLastSeen(presence.lastSeen));
+        const statusText = isOnline ? '' : (compact ? '' : formatLastSeen(presence.lastSeen));
         return `<span class="presence-badge ${isOnline ? 'online' : 'offline'}"><span class="presence-dot ${isOnline ? 'online' : 'offline'}"></span>${statusText}</span>`;
       }
 
@@ -644,6 +673,27 @@
         firebaseDatabase.ref('presence').on('value', presenceSyncRef);
       }
 
+      function renderTypingIndicator() {
+        const statusRow = document.querySelector('.chat-status-row');
+        if (!statusRow) return;
+
+        const roomKey = getActiveRoomKey();
+        const typingUsers = (state.typingUsersByRoom[roomKey] || []).filter((entry) => entry.uid !== state.currentUser?.id);
+        const existingIndicator = statusRow.querySelector('.typing-indicator');
+
+        if (!typingUsers.length) {
+          existingIndicator?.remove();
+          return;
+        }
+
+        const indicatorMarkup = `<div class="typing-indicator">${typingUsers.map((entry) => entry.name).join(', ')} is typing <span></span><span></span><span></span></div>`;
+        if (existingIndicator) {
+          existingIndicator.outerHTML = indicatorMarkup;
+        } else {
+          statusRow.insertAdjacentHTML('beforeend', indicatorMarkup);
+        }
+      }
+
       function syncTypingFromDatabase() {
         if (!firebaseDatabase) return;
         if (typingSyncRef) {
@@ -659,7 +709,7 @@
           });
           state.typingUsersByRoom = typingByRoom;
           if (!state.suppressTypingRender) {
-            render();
+            renderTypingIndicator();
           }
         };
 
@@ -669,16 +719,25 @@
       function setTypingStatus(roomKey, isTyping) {
         if (!firebaseDatabase || !state.currentUser || !roomKey) return;
         const typingRef = firebaseDatabase.ref(`typing/${roomKey}/${state.currentUser.id}`);
+        const currentUserId = state.currentUser.id;
+        const roomTypingTimeouts = typingTimeouts[roomKey] || {};
+
         state.suppressTypingRender = true;
         if (isTyping) {
-          typingRef.set({ uid: state.currentUser.id, name: state.currentUser.name, updatedAt: Date.now() });
-          clearTimeout(typingTimeouts[roomKey]);
-          typingTimeouts[roomKey] = setTimeout(() => {
+          typingRef.set({ uid: currentUserId, name: state.currentUser.name, updatedAt: Date.now() });
+          clearTimeout(roomTypingTimeouts[currentUserId]);
+          roomTypingTimeouts[currentUserId] = setTimeout(() => {
             typingRef.remove();
+            delete roomTypingTimeouts[currentUserId];
           }, 1800);
+          typingTimeouts[roomKey] = roomTypingTimeouts;
         } else {
           typingRef.remove();
-          clearTimeout(typingTimeouts[roomKey]);
+          clearTimeout(roomTypingTimeouts[currentUserId]);
+          delete roomTypingTimeouts[currentUserId];
+          if (!Object.keys(roomTypingTimeouts).length) {
+            delete typingTimeouts[roomKey];
+          }
         }
         window.setTimeout(() => {
           state.suppressTypingRender = false;
@@ -910,7 +969,7 @@
                   <h2>${state.currentUser.name}</h2>
                   <p>${state.currentUser.email}</p>
                   <p>${state.currentUser.role}</p>
-                  <span class="online-pill">Currently active on PulseChat</span>
+                  <span class="online-pill" aria-label="Active presence"></span>
                 </div>
               </div>
               <div class="section-header">
