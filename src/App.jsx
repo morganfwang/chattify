@@ -49,6 +49,7 @@ export default function App() {
   const [selectedGroupMembers, setSelectedGroupMembers] = useState([]);
   const [renameTargetRoomKey, setRenameTargetRoomKey] = useState(null);
   const [renameDraft, setRenameDraft] = useState('');
+  const [selectedProfileUserId, setSelectedProfileUserId] = useState(null);
   const [detectiveMode, setDetectiveMode] = useState(false);
   const [impersonatedUserId, setImpersonatedUserId] = useState(null);
   const [friendFeedback, setFriendFeedback] = useState('');
@@ -101,11 +102,73 @@ export default function App() {
   }, [currentUser, users, roomList, activeRoomKey]);
 
   function seedDemoData() {
-    setUsers([]);
-    setChats({});
+    const userAva = {
+      id: 'user-ava',
+      name: 'Ava Carter',
+      username: 'ava',
+      email: 'ava@example.com',
+      password: 'pass123',
+      role: 'Focused Builder',
+      color: '#7c6cf7',
+      rooms: ['user-ava-user-lee', 'user-ava-user-zara'],
+      createdAt: new Date('2026-01-12').toISOString(),
+    };
+
+    const userLee = {
+      id: 'user-lee',
+      name: 'Lee Santos',
+      username: 'lee',
+      email: 'lee@example.com',
+      password: 'pass123',
+      role: 'Product Designer',
+      color: '#24c0cb',
+      rooms: ['user-ava-user-lee'],
+      createdAt: new Date('2026-02-03').toISOString(),
+    };
+
+    const userZara = {
+      id: 'user-zara',
+      name: 'Zara Kim',
+      username: 'zara',
+      email: 'zara@example.com',
+      password: 'pass123',
+      role: 'Community Lead',
+      color: '#ff7c5c',
+      rooms: ['user-ava-user-zara'],
+      createdAt: new Date('2026-03-08').toISOString(),
+    };
+
+    setUsers([userAva, userLee, userZara]);
+    setChats({
+      'user-ava-user-lee': [
+        {
+          id: createId('msg'),
+          senderId: 'user-lee',
+          text: 'Hey Ava, are you free for a quick sync?',
+          image: '',
+          createdAt: new Date('2026-07-01T09:30:00').toISOString(),
+        },
+        {
+          id: createId('msg'),
+          senderId: 'user-ava',
+          text: 'Sure! Let’s chat in 10 minutes.',
+          image: '',
+          createdAt: new Date('2026-07-01T09:35:00').toISOString(),
+        },
+      ],
+      'user-ava-user-zara': [
+        {
+          id: createId('msg'),
+          senderId: 'user-zara',
+          text: 'I updated the event agenda draft.',
+          image: '',
+          createdAt: new Date('2026-07-02T14:20:00').toISOString(),
+        },
+      ],
+    });
     setRoomMeta({});
-    setCurrentUser(null);
-    setActiveRoomKey(null);
+    setCurrentUser(userAva);
+    setActiveRoomKey('user-ava-user-lee');
   }
 
   const contacts = useMemo(() => {
@@ -388,6 +451,14 @@ export default function App() {
     setRenameDraft('');
   }
 
+  function closeProfileModal() {
+    setSelectedProfileUserId(null);
+  }
+
+  const selectedProfileUser = selectedProfileUserId
+    ? users.find((user) => user.id === selectedProfileUserId)
+    : null;
+
   if (!ready) {
     return (
       <div className="app-shell">
@@ -537,6 +608,17 @@ export default function App() {
                     </p>
                   </div>
                 </button>
+                {room.type === 'direct' && (
+                  <button
+                    type="button"
+                    className="room-menu-btn profile-action-btn"
+                    aria-label={`View ${room.name} profile`}
+                    title={`View ${room.name} profile`}
+                    onClick={() => setSelectedProfileUserId(room.contactId)}
+                  >
+                    View profile
+                  </button>
+                )}
                 {room.type === 'group' && (
                   <button
                     type="button"
@@ -668,6 +750,42 @@ export default function App() {
               </button>
               <button type="button" className="primary-btn" onClick={saveRoomRename}>
                 Save name
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {selectedProfileUser && (
+        <div className="modal-backdrop" onClick={closeProfileModal}>
+          <div className="modal-card" onClick={(event) => event.stopPropagation()}>
+            <div className="modal-header">
+              <h3>{selectedProfileUser.name}</h3>
+              <button type="button" className="ghost-btn" onClick={closeProfileModal}>
+                Close
+              </button>
+            </div>
+            <div className="profile-detail-card">
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Role</span>
+                <strong>{selectedProfileUser.role || 'Focused Builder'}</strong>
+              </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Username</span>
+                <strong>{selectedProfileUser.username}</strong>
+              </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Email</span>
+                <strong>{selectedProfileUser.email}</strong>
+              </div>
+              <div className="profile-detail-row">
+                <span className="profile-detail-label">Member since</span>
+                <strong>{selectedProfileUser.createdAt ? new Date(selectedProfileUser.createdAt).toLocaleDateString() : 'Unknown'}</strong>
+              </div>
+            </div>
+            <div className="modal-actions">
+              <button type="button" className="primary-btn" onClick={closeProfileModal}>
+                Done
               </button>
             </div>
           </div>

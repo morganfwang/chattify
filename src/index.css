@@ -54,6 +54,8 @@ input::placeholder { color: #8ea0d3; }
 .contact-card.active { border-color: #7c6cf7; background: rgba(124,108,247,0.16); }
 .room-select-btn { flex: 1; display: flex; gap: 10px; align-items: center; text-align: left; background: transparent; border: 0; padding: 0; color: inherit; }
 .room-menu-btn { width: 32px; height: 32px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #f2f5ff; font-size: 1rem; line-height: 1; }
+.room-menu-btn.profile-action-btn { width: auto; min-width: 96px; padding: 0 12px; font-size: 0.85rem; border-radius: 999px; background: rgba(36,192,203,0.12); border-color: rgba(36,192,203,0.3); color: #d7f7ff; }
+.room-menu-btn.profile-action-btn:hover { background: rgba(36,192,203,0.2); }
 .detective-controls { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #e7ecff; }
 .detective-controls select { border: 0; background: transparent; color: #f5f7ff; outline: none; }
 .detective-active { border-color: #24c0cb; color: #86f3ff; }
@@ -92,6 +94,10 @@ input::placeholder { color: #8ea0d3; }
 .member-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #f2f5ff; }
 .member-option.selected { border-color: #24c0cb; background: rgba(36,192,203,0.14); }
 .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
+
+.profile-detail-card { display: grid; gap: 14px; padding: 12px 0; }
+.profile-detail-row { display: flex; justify-content: space-between; gap: 8px; align-items: center; padding: 12px; border-radius: 14px; background: rgba(255,255,255,0.04); }
+.profile-detail-label { color: #9da8cf; font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.12em; }
 
 @media (max-width: 900px) {
   .dashboard-shell { flex-direction: column; }

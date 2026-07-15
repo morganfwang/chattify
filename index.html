@@ -83,7 +83,25 @@
       .chat-menu button:hover { background: rgba(255,255,255,0.08); }
       .chat-menu .menu-danger { color: #ff8a8a; }
       .contact-body { flex: 1; min-width: 0; }
-      .contact-topline { display: flex; justify-content: space-between; gap: 10px; font-size: 0.95rem; }
+      .contact-topline { display: flex; justify-content: space-between; gap: 10px; font-size: 0.95rem; align-items: center; }
+      .contact-topline strong {
+        display: inline-block;
+        min-width: 0;
+        max-width: 100%;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 0.95rem;
+      }
+      .profile-card h2 {
+        font-size: 1rem;
+        margin: 0;
+        max-width: calc(100% - 12px);
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+      .profile-card p { margin: 0; }
       .contact-body p { color: #9da8cf; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
       .chat-panel { flex: 1; width: min(100%, 860px); max-width: 860px; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; height: calc(100vh - 36px); margin-left: 16px; overflow: hidden; position: relative; }
       .chat-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); gap: 12px; }
@@ -104,7 +122,7 @@
       .member-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #f2f5ff; }
       .member-option.selected { border-color: #24c0cb; background: rgba(36,192,203,0.14); }
       .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
-      .message-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; padding-bottom: 10px; }
+      .message-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; padding-bottom: 10px; overflow-anchor: none; }
       .message-row { display: flex; }
       .message-row.mine { justify-content: flex-end; }
       .bubble { max-width: min(78%, 520px); background: rgba(255,255,255,0.08); border-radius: 16px 16px 16px 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow-wrap: break-word; word-break: break-word; }
@@ -203,6 +221,7 @@
         renameTargetRoomKey: null,
         renameDraft: '',
         activeRoomMenuKey: null,
+      messageScrollInfo: { roomKey: null, scrollTop: 0, scrollHeight: 0, clientHeight: 0 },
       };
       let hasSyncedConversations = false;
       const audioContext = new (window.AudioContext || window.webkitAudioContext)();
@@ -408,6 +427,16 @@
       }
 
       function render() {
+        const previousMessageList = document.querySelector('.message-list');
+        if (previousMessageList) {
+          state.messageScrollInfo = {
+            roomKey: previousMessageList.dataset.roomKey || null,
+            scrollTop: previousMessageList.scrollTop,
+            scrollHeight: previousMessageList.scrollHeight,
+            clientHeight: previousMessageList.clientHeight,
+          };
+        }
+
         if (!state.authReady) {
           app.innerHTML = '<div class="app-shell"><div class="loading-card">Preparing PulseChat…</div></div>';
           return;
@@ -441,6 +470,8 @@
           const profileName = profileUser?.name || 'Profile';
           const profileRole = profileUser?.role || 'Member';
           const profileInitials = getInitials(profileName);
+          const canEditProfile = profileUser?.id === state.currentUser?.id;
+          const isProfileEditMode = state.profileEditMode;
           const bjjNote = 'Only you and Connor Student do Brazilian Jiu-Jitsu.';
           app.innerHTML = `
             <div class="app-shell">
@@ -454,34 +485,54 @@
                     <div class="profile-badge">🌟 ${profileName === state.currentUser?.name ? 'Your profile' : 'Contact profile'}</div>
                   </div>
                 </div>
-                <div class="profile-grid">
+                ${isProfileEditMode ? `
                   <div class="profile-card-panel">
-                    <h3>About</h3>
-                    <p style="margin-top:8px; color:#dce6ff; line-height:1.7;">${profileName === state.currentUser?.name ? 'This is your personal profile page with your favorite activities and achievements.' : `This is ${profileName}'s profile page.`}</p>
+                    <h3>Edit profile</h3>
+                    <label style="display:block; margin-bottom:12px;">
+                      Name
+                      <input id="profile-name-input" value="${state.profileEditForm.name}" placeholder="Name">
+                    </label>
+                    <label style="display:block; margin-bottom:12px;">
+                      Email
+                      <input id="profile-email-input" value="${state.profileEditForm.email}" placeholder="Email">
+                    </label>
+                    <label style="display:block; margin-bottom:12px;">
+                      Role
+                      <input id="profile-role-input" value="${state.profileEditForm.role}" placeholder="Role">
+                    </label>
                   </div>
-                  <div class="profile-card-panel">
-                    <h3>Highlights</h3>
-                    <div class="profile-tags">
-                      <span>🎮 Roblox</span>
-                      <span>🥋 Brazilian Jiu-Jitsu</span>
-                      <span>💬 Chatting</span>
+                ` : `
+                  <div class="profile-grid">
+                    <div class="profile-card-panel">
+                      <h3>About</h3>
+                      <p style="margin-top:8px; color:#dce6ff; line-height:1.7;">${profileName === state.currentUser?.name ? 'This is your personal profile page with your favorite activities and achievements.' : `This is ${profileName}'s profile page.`}</p>
+                    </div>
+                    <div class="profile-card-panel">
+                      <h3>Highlights</h3>
+                      <div class="profile-tags">
+                        <span>🎮 Roblox</span>
+                        <span>🥋 Brazilian Jiu-Jitsu</span>
+                        <span>💬 Chatting</span>
+                      </div>
+                    </div>
+                    <div class="profile-card-panel">
+                      <h3>Activities</h3>
+                      <ul class="profile-list">
+                        <li>🎮 Loves gaming and connecting with friends</li>
+                        <li>🗣️ Enjoys chatting in group rooms</li>
+                        <li>⭐ Active in PulseChat</li>
+                      </ul>
+                    </div>
+                    <div class="profile-card-panel">
+                      <h3>Quick note</h3>
+                      <p style="margin-top:8px; color:#dce6ff; line-height:1.7;">${profileName === state.currentUser?.name ? `${bjjNote} You can come back here anytime from your profile card.` : `${bjjNote} You can view ${profileName}'s shared details here.`}</p>
                     </div>
                   </div>
-                  <div class="profile-card-panel">
-                    <h3>Activities</h3>
-                    <ul class="profile-list">
-                      <li>🎮 Loves gaming and connecting with friends</li>
-                      <li>🗣️ Enjoys chatting in group rooms</li>
-                      <li>⭐ Active in PulseChat</li>
-                    </ul>
-                  </div>
-                  <div class="profile-card-panel">
-                    <h3>Quick note</h3>
-                    <p style="margin-top:8px; color:#dce6ff; line-height:1.7;">${profileName === state.currentUser?.name ? `${bjjNote} You can come back here anytime from your profile card.` : `${bjjNote} You can view ${profileName}'s shared details here.`}</p>
-                  </div>
-                </div>
+                `}
                 <div class="profile-actions">
                   <button class="ghost-btn" id="close-profile-page" type="button">Back</button>
+                  ${canEditProfile && !isProfileEditMode ? `<button class="primary-btn" id="edit-profile-button" type="button">Edit profile</button>` : ''}
+                  ${isProfileEditMode ? `<button class="primary-btn" id="save-profile-edit" type="button">Save changes</button><button class="ghost-btn" id="cancel-profile-edit" type="button">Cancel</button>` : ''}
                 </div>
               </div>
             </div>`;
@@ -489,7 +540,49 @@
           document.getElementById('close-profile-page').addEventListener('click', () => {
             state.profileOpen = false;
             state.profileUserId = null;
+            state.profileEditMode = false;
+            state.profileEditForm = { name: '', email: '', role: '' };
             render();
+          });
+          document.getElementById('edit-profile-button')?.addEventListener('click', () => {
+            state.profileEditMode = true;
+            const profileUser = state.users.find((user) => user.id === state.profileUserId) || state.currentUser;
+            state.profileEditForm = {
+              name: profileUser?.name || '',
+              email: profileUser?.email || '',
+              role: profileUser?.role || '',
+            };
+            render();
+          });
+          document.getElementById('cancel-profile-edit')?.addEventListener('click', () => {
+            state.profileEditMode = false;
+            state.profileEditForm = { name: '', email: '', role: '' };
+            render();
+          });
+          document.getElementById('save-profile-edit')?.addEventListener('click', () => {
+            const profileUser = state.users.find((user) => user.id === state.profileUserId) || state.currentUser;
+            if (!profileUser) return;
+            const name = document.getElementById('profile-name-input')?.value.trim() || profileUser.name;
+            const email = document.getElementById('profile-email-input')?.value.trim() || profileUser.email;
+            const role = document.getElementById('profile-role-input')?.value.trim() || profileUser.role;
+            const updatedUser = { ...profileUser, name, email, role };
+            state.users = state.users.map((user) => (user.id === updatedUser.id ? updatedUser : user));
+            if (state.currentUser.id === updatedUser.id) {
+              state.currentUser = updatedUser;
+              writeCurrentUserToDatabase(updatedUser);
+            }
+            state.profileEditMode = false;
+            state.profileEditForm = { name: '', email: '', role: '' };
+            render();
+          });
+          document.getElementById('profile-name-input')?.addEventListener('input', (event) => {
+            state.profileEditForm.name = event.target.value;
+          });
+          document.getElementById('profile-email-input')?.addEventListener('input', (event) => {
+            state.profileEditForm.email = event.target.value;
+          });
+          document.getElementById('profile-role-input')?.addEventListener('input', (event) => {
+            state.profileEditForm.role = event.target.value;
           });
           return;
         }
@@ -543,7 +636,7 @@
                   const roomColor = room.type === 'group' ? '#24c0cb' : '#7c6cf7';
                   return `
                     <div class="room-row">
-                      <button class="contact-card ${isActive ? 'active' : ''}" data-room="${room.roomKey}" data-contact="${room.contactId || ''}" data-profile-user="${room.contactId || state.currentUser.id}">
+                      <button class="contact-card ${isActive ? 'active' : ''}" data-room="${room.roomKey}" data-contact="${room.contactId || ''}">
                         <div class="avatar small" style="background:${roomColor}">${getInitials(room.name)}</div>
                         <div class="contact-body">
                           <div class="contact-topline"><strong>${room.name}</strong><span>${lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span></div>
@@ -554,6 +647,7 @@
                         <button class="room-menu-btn" type="button" data-room-menu-toggle="${room.roomKey}" aria-label="Chat options">⋯</button>
                         ${state.activeRoomMenuKey === room.roomKey ? `
                           <div class="chat-menu">
+                            ${room.contactId ? `<button type="button" data-view-profile="${room.contactId}">View profile</button>` : ''}
                             <button type="button" data-room-rename="${room.roomKey}">Rename</button>
                             <button type="button" data-room-pin="${room.roomKey}">Pin chat</button>
                             <button type="button" class="menu-danger" data-room-delete="${room.roomKey}">Delete</button>
@@ -575,7 +669,7 @@
                   <div class="header-badge">Live • Protected</div>
                 </div>
               </header>
-              <div class="message-list">
+              <div class="message-list" data-room-key="${activeRoom?.roomKey || ''}">
                 ${activeRoom ? messages.map((message) => {
                   const mine = message.senderId === state.currentUser.id;
                   const sender = state.users.find((user) => user.id === message.senderId);
@@ -636,6 +730,12 @@
               </div>` : ''}
           </div>`;
 
+        const newMessageList = document.querySelector('.message-list');
+        if (newMessageList && newMessageList.dataset.roomKey === state.messageScrollInfo.roomKey) {
+          const heightDelta = newMessageList.scrollHeight - state.messageScrollInfo.scrollHeight;
+          newMessageList.scrollTop = Math.max(0, state.messageScrollInfo.scrollTop + heightDelta);
+        }
+
         document.getElementById('open-profile-page')?.addEventListener('click', () => {
           state.profileOpen = true;
           state.profileUserId = state.currentUser.id;
@@ -669,15 +769,18 @@
         });
         document.querySelectorAll('[data-room]').forEach((button) => {
           button.addEventListener('click', () => {
-            if (button.dataset.profileUser) {
-              state.profileOpen = true;
-              state.profileUserId = button.dataset.profileUser;
-              state.activeRoomMenuKey = null;
-              render();
-              return;
-            }
             state.activeRoomKey = button.dataset.room;
             state.activeContactId = button.dataset.contact || null;
+            state.activeRoomMenuKey = null;
+            render();
+          });
+        });
+        document.querySelectorAll('[data-view-profile]').forEach((button) => {
+          button.addEventListener('click', (event) => {
+            event.stopPropagation();
+            state.profileOpen = true;
+            state.profileUserId = button.dataset.viewProfile;
+            state.profileEditMode = false;
             state.activeRoomMenuKey = null;
             render();
           });
