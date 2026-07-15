@@ -70,6 +70,24 @@
       .avatar img { width: 100%; height: 100%; object-fit: cover; }
       .online-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.8rem; color: #7ee3b4; }
       .online-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3ee98f; box-shadow: 0 0 0 4px rgba(62, 233, 143, 0.2); display: inline-block; }
+      .presence-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #9da8cf; }
+      .presence-badge.online { color: #7ee3b4; }
+      .presence-badge.offline { color: #93a0c2; }
+      .presence-dot { width: 8px; height: 8px; border-radius: 50%; background: #6e7898; display: inline-block; flex-shrink: 0; }
+      .presence-dot.online { background: #3ee98f; box-shadow: 0 0 0 3px rgba(62, 233, 143, 0.16); }
+      .presence-dot.offline { background: #7a829d; box-shadow: none; }
+      .presence-inline { margin-top: 4px; font-size: 0.82rem; color: #97a2c6; }
+      .typing-indicator { display: inline-flex; align-items: center; gap: 6px; color: #86f3ff; font-size: 0.84rem; margin-top: 6px; }
+      .typing-indicator span { width: 6px; height: 6px; border-radius: 50%; display: inline-block; background: #86f3ff; animation: pulse 1s infinite ease-in-out; }
+      .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+      .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+      .settings-card { display: grid; gap: 12px; padding: 16px; border-radius: 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); }
+      .setting-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+      .setting-toggle { width: 18px; height: 18px; accent-color: #24c0cb; }
+      .setting-slider { width: 100%; accent-color: #7c6cf7; }
+      .member-presence { display: inline-flex; align-items: center; gap: 6px; font-size: 0.84rem; color: #dce6ff; }
+      .member-presence.online { color: #7ee3b4; }
+      .member-presence.offline { color: #91a0c8; }
       .section-header { display: flex; justify-content: space-between; align-items: center; }
       .ghost-btn { background: transparent; border: 1px solid rgba(255,255,255,0.12); color: #dce4ff; padding: 8px 10px; border-radius: 999px; }
       .contact-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; padding-right: 2px; }
@@ -200,6 +218,8 @@
         authMessage: '',
         profileOpen: false,
         profileUserId: null,
+        profileEditMode: false,
+        profileEditForm: { name: '', email: '', role: '' },
         users: [],
         currentUser: null,
         conversations: {},
@@ -221,31 +241,50 @@
         renameTargetRoomKey: null,
         renameDraft: '',
         activeRoomMenuKey: null,
-      messageScrollInfo: { roomKey: null, scrollTop: 0, scrollHeight: 0, clientHeight: 0 },
+        settingsOpen: false,
+        settings: { notificationsEnabled: true, volume: 0.7 },
+        presenceByUserId: {},
+        typingUsersByRoom: {},
+        messageScrollInfo: { roomKey: null, scrollTop: 0, scrollHeight: 0, clientHeight: 0 },
       };
       let hasSyncedConversations = false;
-      const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+      let audioContext = null;
+      const typingTimeouts = {};
+      let presenceSyncRef = null;
+      let typingSyncRef = null;
+      let lastNotifiedMessageIds = new Set();
 
-      function playNotificationSound(type = 'send') {
-        if (!audioContext) return;
+      function ensureAudioContext() {
+        if (audioContext) return audioContext;
+        if (window.AudioContext || window.webkitAudioContext) {
+          audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        }
+        return audioContext;
+      }
+
+      function playNotificationSound(type = 'receive') {
+        if (!state.settings.notificationsEnabled) return;
+        const context = ensureAudioContext();
+        if (!context) return;
+        const volume = Math.max(0, Math.min(1, state.settings.volume || 0.7));
         const frequency = type === 'receive' ? 520 : 760;
-        const duration = type === 'receive' ? 0.12 : 0.08;
-        const gainNode = audioContext.createGain();
-        const oscillator = audioContext.createOscillator();
+        const duration = type === 'receive' ? 0.14 : 0.08;
+        const gainNode = context.createGain();
+        const oscillator = context.createOscillator();
 
         oscillator.type = 'sine';
-        oscillator.frequency.setValueAtTime(frequency, audioContext.currentTime);
-        gainNode.gain.setValueAtTime(0.14, audioContext.currentTime);
+        oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+        gainNode.gain.setValueAtTime(volume * 0.18, context.currentTime);
 
         oscillator.connect(gainNode);
-        gainNode.connect(audioContext.destination);
+        gainNode.connect(context.destination);
 
-        if (audioContext.state === 'suspended') {
-          audioContext.resume();
+        if (context.state === 'suspended') {
+          context.resume();
         }
 
         oscillator.start();
-        oscillator.stop(audioContext.currentTime + duration);
+        oscillator.stop(context.currentTime + duration);
       }
 
       const app = document.getElementById('app');
@@ -301,6 +340,50 @@
           friends: state.friends,
           friendRequests: state.friendRequests,
         }));
+        localStorage.setItem('pulsechat-settings-v1', JSON.stringify(state.settings));
+      }
+
+      function getUserPresence(userId) {
+        const presence = state.presenceByUserId[userId];
+        const fallbackUser = state.users.find((user) => user.id === userId);
+        return {
+          uid: userId,
+          status: presence?.status || fallbackUser?.status || 'offline',
+          lastSeen: presence?.lastSeen || fallbackUser?.lastSeen || Date.now(),
+          name: presence?.name || fallbackUser?.name || '',
+        };
+      }
+
+      function isUserOnline(userId) {
+        return getUserPresence(userId).status === 'online';
+      }
+
+      function formatLastSeen(timestamp) {
+        if (!timestamp) return 'Offline';
+        const diff = Date.now() - timestamp;
+        const minutes = Math.max(1, Math.round(diff / 60000));
+        if (minutes < 60) {
+          return `Last seen ${minutes} min ago`;
+        }
+        const hours = Math.floor(minutes / 60);
+        if (hours < 24) {
+          return `Last seen ${hours}h ago`;
+        }
+        const days = Math.floor(hours / 24);
+        return `Last seen ${days}d ago`;
+      }
+
+      function getPresenceMarkup(userId, compact = false) {
+        const presence = getUserPresence(userId);
+        const isOnline = presence.status === 'online';
+        const statusText = isOnline ? 'Online' : (compact ? 'Offline' : formatLastSeen(presence.lastSeen));
+        return `<span class="presence-badge ${isOnline ? 'online' : 'offline'}"><span class="presence-dot ${isOnline ? 'online' : 'offline'}"></span>${statusText}</span>`;
+      }
+
+      function getMemberPresenceMarkup(memberId) {
+        const presence = getUserPresence(memberId);
+        const isOnline = presence.status === 'online';
+        return `<span class="member-presence ${isOnline ? 'online' : 'offline'}"><span class="presence-dot ${isOnline ? 'online' : 'offline'}"></span>${presence.name || 'Member'}</span>`;
       }
 
       function syncUsersFromDatabase() {
@@ -353,14 +436,110 @@
         firebaseDatabase.ref('users').on('value', usersSyncRef);
       }
 
-      function writeCurrentUserToDatabase(user) {
+      function setUserPresenceOnline(user) {
         if (!firebaseDatabase || !user) return;
         const userRef = firebaseDatabase.ref(`users/${user.id}`);
-        userRef.set({
+        const presenceRef = firebaseDatabase.ref(`presence/${user.id}`);
+        const payload = {
           ...user,
+          status: 'online',
           lastSeen: Date.now(),
-        });
-        userRef.onDisconnect().remove();
+        };
+        const presencePayload = {
+          uid: user.id,
+          name: user.name,
+          email: user.email,
+          status: 'online',
+          lastSeen: Date.now(),
+        };
+        userRef.set(payload);
+        presenceRef.set(presencePayload);
+        userRef.onDisconnect().update({ status: 'offline', lastSeen: Date.now() });
+        presenceRef.onDisconnect().set({ uid: user.id, name: user.name, email: user.email, status: 'offline', lastSeen: Date.now() });
+      }
+
+      function writeCurrentUserToDatabase(user) {
+        setUserPresenceOnline(user);
+      }
+
+      function setUserPresenceOffline() {
+        if (!firebaseDatabase || !state.currentUser) return;
+        const userRef = firebaseDatabase.ref(`users/${state.currentUser.id}`);
+        const presenceRef = firebaseDatabase.ref(`presence/${state.currentUser.id}`);
+        const offlinePayload = { status: 'offline', lastSeen: Date.now() };
+        userRef.update(offlinePayload);
+        presenceRef.set({ uid: state.currentUser.id, name: state.currentUser.name, email: state.currentUser.email, status: 'offline', lastSeen: Date.now() });
+      }
+
+      function syncPresenceFromDatabase() {
+        if (!firebaseDatabase) return;
+        if (presenceSyncRef) {
+          firebaseDatabase.ref('presence').off('value', presenceSyncRef);
+        }
+
+        presenceSyncRef = (snapshot) => {
+          const values = snapshot.val() || {};
+          const nextPresence = {};
+          Object.entries(values).forEach(([userId, entry]) => {
+            if (!entry) return;
+            nextPresence[userId] = {
+              uid: userId,
+              ...entry,
+              status: entry.status || 'offline',
+              lastSeen: entry.lastSeen || Date.now(),
+            };
+          });
+
+          state.presenceByUserId = nextPresence;
+          state.users = state.users.map((user) => {
+            const presence = nextPresence[user.id];
+            if (!presence) return user;
+            return {
+              ...user,
+              status: presence.status || 'offline',
+              lastSeen: presence.lastSeen || user.lastSeen || Date.now(),
+            };
+          });
+          persist();
+          render();
+        };
+
+        firebaseDatabase.ref('presence').on('value', presenceSyncRef);
+      }
+
+      function syncTypingFromDatabase() {
+        if (!firebaseDatabase) return;
+        if (typingSyncRef) {
+          firebaseDatabase.ref('typing').off('value', typingSyncRef);
+        }
+
+        typingSyncRef = (snapshot) => {
+          const values = snapshot.val() || {};
+          const typingByRoom = {};
+          Object.entries(values).forEach(([roomKey, members]) => {
+            const entries = Object.values(members || {}).filter(Boolean);
+            typingByRoom[roomKey] = entries.filter((entry) => entry.uid !== state.currentUser?.id);
+          });
+          state.typingUsersByRoom = typingByRoom;
+          render();
+        };
+
+        firebaseDatabase.ref('typing').on('value', typingSyncRef);
+      }
+
+      function setTypingStatus(roomKey, isTyping) {
+        if (!firebaseDatabase || !state.currentUser || !roomKey) return;
+        const typingRef = firebaseDatabase.ref(`typing/${roomKey}/${state.currentUser.id}`);
+        if (isTyping) {
+          typingRef.set({ uid: state.currentUser.id, name: state.currentUser.name, updatedAt: Date.now() });
+          clearTimeout(typingTimeouts[roomKey]);
+          typingTimeouts[roomKey] = setTimeout(() => {
+            typingRef.remove();
+          }, 1800);
+        } else {
+          typingRef.remove();
+          clearTimeout(typingTimeouts[roomKey]);
+        }
       }
 
       function syncRoomMetaFromDatabase() {
@@ -396,7 +575,7 @@
           const rooms = snapshot.val() || {};
           const normalizedConversations = {};
           const previousConversations = state.conversations || {};
-          let shouldPlayReceive = false;
+          const newReceiveMessages = [];
 
           Object.entries(rooms).forEach(([roomKey, roomMessages]) => {
             if (!roomMessages) return;
@@ -405,19 +584,23 @@
               : Object.values(roomMessages).filter(Boolean);
             normalizedConversations[roomKey] = messages.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
 
-            const previousMessages = previousConversations[roomKey] || [];
-            if (hasSyncedConversations && state.currentUser && normalizedConversations[roomKey].length > previousMessages.length) {
-              const newMessages = normalizedConversations[roomKey].slice(previousMessages.length);
-              if (newMessages.some((msg) => msg.senderId !== state.currentUser.id)) {
-                shouldPlayReceive = true;
-              }
+            if (hasSyncedConversations && state.currentUser) {
+              const previousMessages = previousConversations[roomKey] || [];
+              const previousIds = new Set(previousMessages.map((message) => message.id));
+              const incomingMessages = normalizedConversations[roomKey].filter((message) => !previousIds.has(message.id));
+              incomingMessages.forEach((message) => {
+                if (message.senderId !== state.currentUser.id && message.id && !lastNotifiedMessageIds.has(message.id)) {
+                  newReceiveMessages.push(message);
+                  lastNotifiedMessageIds.add(message.id);
+                }
+              });
             }
           });
 
           state.conversations = normalizedConversations;
           persist();
           render();
-          if (shouldPlayReceive) {
+          if (newReceiveMessages.length && state.settings.notificationsEnabled) {
             playNotificationSound('receive');
           }
           hasSyncedConversations = true;
@@ -483,6 +666,7 @@
                     <h1>${profileName}</h1>
                     <p>${profileRole}</p>
                     <div class="profile-badge">🌟 ${profileName === state.currentUser?.name ? 'Your profile' : 'Contact profile'}</div>
+                    ${profileUser?.id ? `<div class="presence-inline">${getPresenceMarkup(profileUser.id, false)}</div>` : ''}
                   </div>
                 </div>
                 ${isProfileEditMode ? `
@@ -641,6 +825,7 @@
                         <div class="contact-body">
                           <div class="contact-topline"><strong>${room.name}</strong><span>${lastMessage ? formatTime(lastMessage.createdAt) : 'Now'}</span></div>
                           <p>${room.type === 'group' ? `${room.memberIds.length} members` : (lastMessage?.text || 'Start a fresh conversation')}</p>
+                          ${room.contactId ? `<div class="presence-inline">${getPresenceMarkup(room.contactId, true)}</div>` : ''}
                         </div>
                       </button>
                       <div class="room-menu-wrapper">
@@ -662,9 +847,11 @@
                 <div>
                   <p class="eyebrow">${activeRoom?.type === 'group' ? 'Group chat' : 'Direct message'}</p>
                   <h2>${activeRoom ? activeRoom.name : 'Select a room'}</h2>
-                  ${activeRoom?.type === 'group' ? `<p class="room-subtitle">${activeRoom.memberIds.map((memberId) => state.users.find((user) => user.id === memberId)?.name).filter(Boolean).join(', ')}</p>` : ''}
+                  ${activeRoom?.type === 'group' ? `<div class="room-subtitle">${activeRoom.memberIds.map((memberId) => getMemberPresenceMarkup(memberId)).join('')}</div>` : `<div class="presence-inline">${activeRoom?.contactId ? getPresenceMarkup(activeRoom.contactId, false) : ''}</div>`}
+                  ${activeRoom && state.typingUsersByRoom[activeRoom.roomKey]?.length ? `<div class="typing-indicator">${state.typingUsersByRoom[activeRoom.roomKey].map((entry) => entry.name).join(', ')} is typing <span></span><span></span><span></span></div>` : ''}
                 </div>
                 <div class="header-actions">
+                  <button class="ghost-btn" id="toggle-settings" type="button">Settings</button>
                   <button class="ghost-btn" id="select-accounts" type="button">Create Group</button>
                   <div class="header-badge">Live • Protected</div>
                 </div>
@@ -728,6 +915,26 @@
                   </div>
                 </div>
               </div>` : ''}
+            ${state.settingsOpen ? `
+              <div class="modal-backdrop">
+                <div class="modal-card">
+                  <div class="modal-header">
+                    <h3>Notifications</h3>
+                    <button class="ghost-btn" id="close-settings" type="button">Close</button>
+                  </div>
+                  <div class="settings-card">
+                    <div class="setting-row">
+                      <span>Enable sound notifications</span>
+                      <input class="setting-toggle" id="notify-toggle" type="checkbox" ${state.settings.notificationsEnabled ? 'checked' : ''}>
+                    </div>
+                    <label>
+                      Volume
+                      <input id="notify-volume" class="setting-slider" type="range" min="0" max="1" step="0.1" value="${state.settings.volume}">
+                    </label>
+                    <p class="modal-help">Incoming messages play a sound for new chats and group rooms unless notifications are muted.</p>
+                  </div>
+                </div>
+              </div>` : ''}
           </div>`;
 
         const newMessageList = document.querySelector('.message-list');
@@ -747,6 +954,24 @@
         document.getElementById('save-rename-modal')?.addEventListener('click', saveRoomRename);
         document.getElementById('rename-room-input')?.addEventListener('input', (event) => {
           state.renameDraft = event.target.value;
+        });
+        document.getElementById('toggle-settings')?.addEventListener('click', () => {
+          state.settingsOpen = true;
+          render();
+        });
+        document.getElementById('close-settings')?.addEventListener('click', () => {
+          state.settingsOpen = false;
+          render();
+        });
+        document.getElementById('notify-toggle')?.addEventListener('change', (event) => {
+          state.settings.notificationsEnabled = event.target.checked;
+          persist();
+          render();
+        });
+        document.getElementById('notify-volume')?.addEventListener('input', (event) => {
+          state.settings.volume = Number(event.target.value);
+          persist();
+          render();
         });
         document.getElementById('select-accounts').addEventListener('click', () => {
           state.groupModalOpen = true;
@@ -819,6 +1044,16 @@
         });
         document.getElementById('draft').addEventListener('input', (event) => {
           state.draft = event.target.value;
+          const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
+          setTypingStatus(roomKey, Boolean(event.target.value.trim()));
+        });
+        document.getElementById('draft').addEventListener('focus', () => {
+          const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
+          setTypingStatus(roomKey, Boolean(state.draft.trim()));
+        });
+        document.getElementById('draft').addEventListener('blur', () => {
+          const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
+          setTypingStatus(roomKey, false);
         });
         document.getElementById('image-input').addEventListener('change', handleImageSelect);
         if (document.getElementById('remove-image')) {
@@ -848,6 +1083,14 @@
 
       function bootstrap() {
         const raw = localStorage.getItem(STORAGE_KEY);
+        const storedSettings = localStorage.getItem('pulsechat-settings-v1');
+        if (storedSettings) {
+          try {
+            state.settings = { ...state.settings, ...JSON.parse(storedSettings) };
+          } catch {
+            state.settings = { notificationsEnabled: true, volume: 0.7 };
+          }
+        }
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
@@ -877,8 +1120,11 @@
         firebaseAuth = firebase.auth();
         firebaseDatabase = firebase.database();
         syncUsersFromDatabase();
+        syncPresenceFromDatabase();
+        syncTypingFromDatabase();
         syncRoomMetaFromDatabase();
         syncConversationsFromDatabase();
+        window.addEventListener('beforeunload', () => setUserPresenceOffline());
         firebaseAuth.onAuthStateChanged((user) => {
           state.authReady = true;
           state.authLoading = false;
@@ -890,6 +1136,7 @@
             state.authMessage = `Signed in as ${state.currentUser.name}`;
           } else {
             if (state.currentUser && firebaseDatabase) {
+              setUserPresenceOffline();
               firebaseDatabase.ref(`users/${state.currentUser.id}`).remove();
             }
             state.currentUser = null;
@@ -934,6 +1181,7 @@
       async function handleLogout() {
         try {
           if (state.currentUser && firebaseDatabase) {
+            setUserPresenceOffline();
             firebaseDatabase.ref(`users/${state.currentUser.id}`).remove();
           }
           await firebaseAuth.signOut();
@@ -1123,7 +1371,7 @@
         const outgoing = { id: createId('msg'), senderId, text: cleanText, image: state.selectedImage, createdAt: new Date().toISOString() };
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
-        playNotificationSound('send');
+        setTypingStatus(roomKey, false);
         state.draft = '';
         state.selectedImage = '';
         persist();
