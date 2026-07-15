@@ -70,7 +70,7 @@
       .avatar img { width: 100%; height: 100%; object-fit: cover; }
       .online-pill { display: inline-flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 0.8rem; color: #7ee3b4; }
       .online-pill::before { content: ''; width: 8px; height: 8px; border-radius: 50%; background: #3ee98f; box-shadow: 0 0 0 4px rgba(62, 233, 143, 0.2); display: inline-block; }
-      .presence-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.8rem; color: #9da8cf; }
+      .presence-badge { display: inline-flex; align-items: center; gap: 6px; font-size: 0.82rem; color: #9da8cf; white-space: nowrap; }
       .presence-badge.online { color: #7ee3b4; }
       .presence-badge.offline { color: #93a0c2; }
       .presence-dot { width: 8px; height: 8px; border-radius: 50%; background: #6e7898; display: inline-block; flex-shrink: 0; }
@@ -121,10 +121,12 @@
       }
       .profile-card p { margin: 0; }
       .contact-body p { color: #9da8cf; font-size: 0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-      .chat-panel { flex: 1; width: min(100%, 860px); max-width: 860px; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; height: calc(100vh - 36px); margin-left: 16px; overflow: hidden; position: relative; }
-      .chat-header { display: flex; justify-content: space-between; align-items: center; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); gap: 12px; }
+      .chat-panel { flex: 1; width: min(100%, 860px); max-width: 860px; border-radius: 24px; padding: 20px; display: flex; flex-direction: column; gap: 16px; height: calc(100vh - 36px); min-height: 0; margin-left: 16px; overflow: hidden; position: relative; }
+      .chat-header { display: flex; justify-content: space-between; align-items: flex-start; padding-bottom: 10px; border-bottom: 1px solid rgba(255,255,255,0.08); gap: 12px; flex-shrink: 0; }
+      .chat-header-meta { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+      .chat-status-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; min-height: 22px; }
       .header-actions { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
-      .composer { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 10px; background: rgba(6, 12, 31, 0.96); padding-top: 10px; padding-bottom: 8px; z-index: 1; }
+      .composer { position: sticky; bottom: 0; display: flex; flex-direction: column; gap: 10px; background: rgba(6, 12, 31, 0.96); border-top: 1px solid rgba(255,255,255,0.08); padding-top: 12px; padding-bottom: 6px; z-index: 2; flex-shrink: 0; }
       .header-badge { padding: 7px 12px; border-radius: 999px; background: rgba(36,192,203,0.16); color: #86f3ff; font-size: 0.9rem; }
       .room-subtitle { color: #94a0c4; font-size: 0.92rem; margin-top: 4px; }
       .detective-controls { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 999px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.04); color: #e7ecff; }
@@ -140,7 +142,7 @@
       .member-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.08); background: rgba(255,255,255,0.04); color: #f2f5ff; }
       .member-option.selected { border-color: #24c0cb; background: rgba(36,192,203,0.14); }
       .modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px; }
-      .message-list { flex: 1; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; padding-bottom: 10px; overflow-anchor: none; }
+      .message-list { flex: 1 1 auto; min-height: 0; overflow: auto; display: flex; flex-direction: column; gap: 10px; padding-right: 4px; padding-bottom: 10px; overflow-anchor: none; }
       .message-row { display: flex; }
       .message-row.mine { justify-content: flex-end; }
       .bubble { max-width: min(78%, 520px); background: rgba(255,255,255,0.08); border-radius: 16px 16px 16px 6px; padding: 10px 12px; display: flex; flex-direction: column; gap: 6px; overflow-wrap: break-word; word-break: break-word; }
@@ -155,9 +157,11 @@
       .typing-bubble span:nth-child(3) { animation-delay: 0.4s; }
       @keyframes pulse { 0%,80%,100% { transform: scale(0.8); opacity: 0.5; } 40% { transform: scale(1.1); opacity: 1; } }
       .composer { display: flex; flex-direction: column; gap: 10px; }
-      .input-row { display: flex; gap: 10px; align-items: center; }
+      .input-row { display: flex; gap: 10px; align-items: flex-end; }
+      .input-row textarea { flex: 1; min-height: 44px; max-height: 140px; resize: none; overflow-y: auto; padding: 12px 14px; border-radius: 12px; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.06); color: white; }
+      .input-row textarea::placeholder { color: #8ea0d3; }
       .input-row input { flex: 1; }
-      .upload-btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid rgba(255,255,255,0.13); padding: 10px 12px; color: #dfe7ff; background: rgba(255,255,255,0.04); }
+      .upload-btn { display: inline-flex; align-items: center; justify-content: center; border-radius: 12px; border: 1px solid rgba(255,255,255,0.13); padding: 10px 12px; color: #dfe7ff; background: rgba(255,255,255,0.04); flex-shrink: 0; }
       .upload-btn input { display: none; }
       .preview-card { display: flex; align-items: center; justify-content: space-between; gap: 10px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); border-radius: 14px; padding: 8px 10px; }
       .preview-card img { width: 60px; height: 60px; object-fit: cover; border-radius: 10px; }
@@ -246,6 +250,9 @@
         presenceByUserId: {},
         typingUsersByRoom: {},
         messageScrollInfo: { roomKey: null, scrollTop: 0, scrollHeight: 0, clientHeight: 0 },
+        eventsBound: false,
+        isDraftEditing: false,
+        suppressTypingRender: false,
       };
       let hasSyncedConversations = false;
       let audioContext = null;
@@ -341,6 +348,72 @@
           friendRequests: state.friendRequests,
         }));
         localStorage.setItem('pulsechat-settings-v1', JSON.stringify(state.settings));
+      }
+
+      function getActiveRoomKey() {
+        return state.activeRoomKey || (state.activeContactId ? [state.currentUser?.id, state.activeContactId].sort().join('-') : null);
+      }
+
+      function syncDraftFieldState() {
+        const draftField = document.getElementById('draft');
+        if (!draftField) return;
+        if (draftField.value !== state.draft) {
+          draftField.value = state.draft;
+        }
+        if (state.isDraftEditing && document.activeElement !== draftField) {
+          draftField.focus();
+          const end = draftField.value.length;
+          draftField.setSelectionRange(end, end);
+        }
+        requestAnimationFrame(() => {
+          if (!draftField) return;
+          draftField.style.height = 'auto';
+          draftField.style.height = `${Math.min(140, draftField.scrollHeight)}px`;
+        });
+      }
+
+      function bindComposerEvents() {
+        if (state.eventsBound || !app) return;
+        state.eventsBound = true;
+
+        app.addEventListener('submit', (event) => {
+          if (event.target instanceof HTMLElement && event.target.closest('#composer-form')) {
+            event.preventDefault();
+            sendMessage();
+          }
+        });
+
+        app.addEventListener('input', (event) => {
+          const draftField = event.target;
+          if (!(draftField instanceof HTMLTextAreaElement) || draftField.id !== 'draft') return;
+          state.isDraftEditing = true;
+          state.draft = draftField.value;
+          setTypingStatus(getActiveRoomKey(), Boolean(state.draft.trim()));
+          syncDraftFieldState();
+        });
+
+        app.addEventListener('keydown', (event) => {
+          const draftField = event.target;
+          if (!(draftField instanceof HTMLTextAreaElement) || draftField.id !== 'draft') return;
+          if (event.key === 'Enter' && !event.shiftKey) {
+            event.preventDefault();
+            sendMessage();
+          }
+        });
+
+        app.addEventListener('focusin', (event) => {
+          if (event.target instanceof HTMLTextAreaElement && event.target.id === 'draft') {
+            state.isDraftEditing = true;
+            setTypingStatus(getActiveRoomKey(), Boolean(state.draft.trim()));
+          }
+        });
+
+        app.addEventListener('focusout', (event) => {
+          if (event.target instanceof HTMLTextAreaElement && event.target.id === 'draft') {
+            state.isDraftEditing = false;
+            setTypingStatus(getActiveRoomKey(), false);
+          }
+        });
       }
 
       function getUserPresence(userId) {
@@ -521,7 +594,9 @@
             typingByRoom[roomKey] = entries.filter((entry) => entry.uid !== state.currentUser?.id);
           });
           state.typingUsersByRoom = typingByRoom;
-          render();
+          if (!state.suppressTypingRender) {
+            render();
+          }
         };
 
         firebaseDatabase.ref('typing').on('value', typingSyncRef);
@@ -530,6 +605,7 @@
       function setTypingStatus(roomKey, isTyping) {
         if (!firebaseDatabase || !state.currentUser || !roomKey) return;
         const typingRef = firebaseDatabase.ref(`typing/${roomKey}/${state.currentUser.id}`);
+        state.suppressTypingRender = true;
         if (isTyping) {
           typingRef.set({ uid: state.currentUser.id, name: state.currentUser.name, updatedAt: Date.now() });
           clearTimeout(typingTimeouts[roomKey]);
@@ -540,6 +616,9 @@
           typingRef.remove();
           clearTimeout(typingTimeouts[roomKey]);
         }
+        window.setTimeout(() => {
+          state.suppressTypingRender = false;
+        }, 0);
       }
 
       function syncRoomMetaFromDatabase() {
@@ -846,12 +925,17 @@
               <header class="chat-header">
                 <div>
                   <p class="eyebrow">${activeRoom?.type === 'group' ? 'Group chat' : 'Direct message'}</p>
-                  <h2>${activeRoom ? activeRoom.name : 'Select a room'}</h2>
-                  ${activeRoom?.type === 'group' ? `<div class="room-subtitle">${activeRoom.memberIds.map((memberId) => getMemberPresenceMarkup(memberId)).join('')}</div>` : `<div class="presence-inline">${activeRoom?.contactId ? getPresenceMarkup(activeRoom.contactId, false) : ''}</div>`}
-                  ${activeRoom && state.typingUsersByRoom[activeRoom.roomKey]?.length ? `<div class="typing-indicator">${state.typingUsersByRoom[activeRoom.roomKey].map((entry) => entry.name).join(', ')} is typing <span></span><span></span><span></span></div>` : ''}
+                  <div class="chat-header-meta">
+                    <h2>${activeRoom ? activeRoom.name : 'Select a room'}</h2>
+                    <div class="chat-status-row">
+                      ${activeRoom?.type === 'group' ? `<div class="room-subtitle">${activeRoom.memberIds.map((memberId) => getMemberPresenceMarkup(memberId)).join('')}</div>` : `<div class="presence-inline">${activeRoom?.contactId ? getPresenceMarkup(activeRoom.contactId, false) : ''}</div>`}
+                      ${activeRoom && state.typingUsersByRoom[activeRoom.roomKey]?.length ? `<div class="typing-indicator">${state.typingUsersByRoom[activeRoom.roomKey].map((entry) => entry.name).join(', ')} is typing <span></span><span></span><span></span></div>` : ''}
+                    </div>
+                  </div>
                 </div>
                 <div class="header-actions">
                   <button class="ghost-btn" id="toggle-settings" type="button">Settings</button>
+                  <button class="ghost-btn ${state.detectiveMode ? 'detective-active' : ''}" id="detective-toggle" type="button">${state.detectiveMode ? 'Detective On' : 'Detective'}</button>
                   <button class="ghost-btn" id="select-accounts" type="button">Create Group</button>
                   <div class="header-badge">Live • Protected</div>
                 </div>
@@ -867,7 +951,7 @@
               <form class="composer" id="composer-form">
                 ${state.selectedImage ? `<div class="preview-card"><img src="${state.selectedImage}" alt="Preview"><button type="button" class="ghost-btn" id="remove-image">Remove</button></div>` : ''}
                 <div class="input-row">
-                  <input id="draft" value="${state.draft}" placeholder="Write a message…">
+                  <textarea id="draft" rows="1" placeholder="Write a message…">${state.draft}</textarea>
                   <label class="upload-btn">+ Image<input id="image-input" type="file" accept="image/*"></label>
                   <button class="primary-btn" type="submit">Send</button>
                 </div>
@@ -942,6 +1026,7 @@
           const heightDelta = newMessageList.scrollHeight - state.messageScrollInfo.scrollHeight;
           newMessageList.scrollTop = Math.max(0, state.messageScrollInfo.scrollTop + heightDelta);
         }
+        syncDraftFieldState();
 
         document.getElementById('open-profile-page')?.addEventListener('click', () => {
           state.profileOpen = true;
@@ -959,6 +1044,7 @@
           state.settingsOpen = true;
           render();
         });
+        document.getElementById('detective-toggle')?.addEventListener('click', handleDetectiveAccess);
         document.getElementById('close-settings')?.addEventListener('click', () => {
           state.settingsOpen = false;
           render();
@@ -1038,24 +1124,8 @@
             deleteGroupRoom(button.dataset.roomDelete);
           });
         });
-        document.getElementById('composer-form').addEventListener('submit', (event) => {
-          event.preventDefault();
-          sendMessage();
-        });
-        document.getElementById('draft').addEventListener('input', (event) => {
-          state.draft = event.target.value;
-          const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
-          setTypingStatus(roomKey, Boolean(event.target.value.trim()));
-        });
-        document.getElementById('draft').addEventListener('focus', () => {
-          const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
-          setTypingStatus(roomKey, Boolean(state.draft.trim()));
-        });
-        document.getElementById('draft').addEventListener('blur', () => {
-          const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
-          setTypingStatus(roomKey, false);
-        });
-        document.getElementById('image-input').addEventListener('change', handleImageSelect);
+        bindComposerEvents();
+        document.getElementById('image-input')?.addEventListener('change', handleImageSelect);
         if (document.getElementById('remove-image')) {
           document.getElementById('remove-image').addEventListener('click', () => {
             state.selectedImage = '';
@@ -1362,7 +1432,7 @@
           return;
         }
         state.error = '';
-        const roomKey = state.activeRoomKey || (state.activeContactId ? [state.currentUser.id, state.activeContactId].sort().join('-') : null);
+        const roomKey = getActiveRoomKey();
         if (!roomKey) {
           render();
           return;
@@ -1372,10 +1442,18 @@
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
         setTypingStatus(roomKey, false);
+        state.isDraftEditing = false;
         state.draft = '';
         state.selectedImage = '';
         persist();
         render();
+        requestAnimationFrame(() => {
+          const draftField = document.getElementById('draft');
+          if (draftField) {
+            draftField.focus();
+            draftField.setSelectionRange(0, 0);
+          }
+        });
 
         if (roomRef) {
           roomRef.push(outgoing);
@@ -1388,7 +1466,15 @@
         const reader = new FileReader();
         reader.onload = () => {
           state.selectedImage = reader.result;
+          state.isDraftEditing = false;
           render();
+          requestAnimationFrame(() => {
+            const draftField = document.getElementById('draft');
+            if (draftField) {
+              draftField.focus();
+              draftField.setSelectionRange(draftField.value.length, draftField.value.length);
+            }
+          });
         };
         reader.readAsDataURL(file);
       }
