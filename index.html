@@ -185,6 +185,7 @@
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-storage-compat.js"></script>
     <script>
       const STORAGE_KEY = 'pulsechat-state-v1';
       const firebaseConfig = {
@@ -206,6 +207,16 @@
         return name.split(' ').slice(0, 2).map((part) => part[0]).join('').toUpperCase();
       }
       function formatTime(timestamp) {
+        if (timestamp == null) return '';
+        if (typeof timestamp === 'object') {
+          timestamp = timestamp?.toString?.() || state.currentUser?.lastSeen || Date.now();
+        }
+        const parsed = Number(timestamp);
+        if (!Number.isFinite(parsed)) {
+          timestamp = timestamp.toString();
+        } else {
+          timestamp = parsed;
+        }
         return new Date(timestamp).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
       }
 
@@ -233,6 +244,9 @@
         draft: '',
         error: '',
         selectedImage: '',
+        selectedImageFile: null,
+        uploadingImage: false,
+        selectedImagePreview: '',
         groupModalOpen: false,
         groupName: '',
         selectedGroupMembers: [],
@@ -246,20 +260,34 @@
         renameDraft: '',
         activeRoomMenuKey: null,
         settingsOpen: false,
-        settings: { notificationsEnabled: true, volume: 0.7 },
+        settings: { notificationsEnabled: true, browserNotificationsEnabled: true, vibrationEnabled: true, volume: 0.7 },
         presenceByUserId: {},
         typingUsersByRoom: {},
         messageScrollInfo: { roomKey: null, scrollTop: 0, scrollHeight: 0, clientHeight: 0 },
         eventsBound: false,
         isDraftEditing: false,
         suppressTypingRender: false,
+        sendStatus: 'idle',
+        sendError: '',
+        failedMessage: null,
+        connectionId: null,
       };
       let hasSyncedConversations = false;
       let audioContext = null;
       const typingTimeouts = {};
       let presenceSyncRef = null;
       let typingSyncRef = null;
+      let connectedRef = null;
+      let currentConnectionRef = null;
+      let userLastSeenOnDisconnectRef = null;
+      let notificationPermissionRequested = false;
       let lastNotifiedMessageIds = new Set();
+      let firebaseStorage = null;
+      let activeRoomListenerKey = null;
+      const roomMessageListeners = {};
+      const roomMessageIds = {};
+      const roomPageState = {};
+      let messageListScrollHandler = null;
 
       function ensureAudioContext() {
         if (audioContext) return audioContext;
@@ -292,6 +320,32 @@
 
         oscillator.start();
         oscillator.stop(context.currentTime + duration);
+      }
+
+      function requestBrowserNotificationPermission() {
+        if (notificationPermissionRequested || !('Notification' in window)) return;
+        notificationPermissionRequested = true;
+        Notification.requestPermission().then(() => {
+          render();
+        });
+      }
+
+      function sendBrowserNotification(message, room) {
+        if (!state.settings.browserNotificationsEnabled || document.visibilityState === 'visible') return;
+        if (!('Notification' in window) || Notification.permission !== 'granted') return;
+        const sender = state.users.find((user) => user.id === message.senderId);
+        const title = sender ? `${sender.name} sent a message` : 'New message';
+        const preview = message.text || 'Image shared';
+        const body = room?.type === 'group' ? `${room.name}: ${preview}` : preview;
+        const notification = new Notification(title, {
+          body,
+          icon: sender?.photoURL || undefined,
+          vibrate: state.settings.vibrationEnabled ? [100, 50, 100] : undefined,
+        });
+        notification.onclick = () => {
+          window.focus();
+          notification.close();
+        };
       }
 
       const app = document.getElementById('app');
@@ -340,7 +394,6 @@
       function persist() {
         localStorage.setItem(STORAGE_KEY, JSON.stringify({
           users: state.users,
-          conversations: state.conversations,
           roomMeta: state.roomMeta,
           activeContactId: state.activeContactId,
           activeRoomKey: state.activeRoomKey,
@@ -352,6 +405,11 @@
 
       function getActiveRoomKey() {
         return state.activeRoomKey || (state.activeContactId ? [state.currentUser?.id, state.activeContactId].sort().join('-') : null);
+      }
+
+      function isScrolledToBottom(element) {
+        if (!element) return false;
+        return element.scrollTop + element.clientHeight >= element.scrollHeight - 20;
       }
 
       function syncDraftFieldState() {
@@ -518,17 +576,18 @@
           status: 'online',
           lastSeen: Date.now(),
         };
-        const presencePayload = {
-          uid: user.id,
-          name: user.name,
-          email: user.email,
-          status: 'online',
-          lastSeen: Date.now(),
-        };
         userRef.set(payload);
-        presenceRef.set(presencePayload);
-        userRef.onDisconnect().update({ status: 'offline', lastSeen: Date.now() });
-        presenceRef.onDisconnect().set({ uid: user.id, name: user.name, email: user.email, status: 'offline', lastSeen: Date.now() });
+        presenceRef.set({ uid: user.id, name: user.name, email: user.email, status: 'online', lastSeen: Date.now() });
+
+        if (currentConnectionRef) {
+          currentConnectionRef.remove();
+        }
+        currentConnectionRef = firebaseDatabase.ref(`presence/${user.id}/connections/${state.connectionId}`);
+        userLastSeenOnDisconnectRef = firebaseDatabase.ref(`presence/${user.id}`);
+
+        currentConnectionRef.set({ connectedAt: Date.now() });
+        currentConnectionRef.onDisconnect().remove();
+        userLastSeenOnDisconnectRef.onDisconnect().update({ status: 'offline', lastSeen: Date.now() });
       }
 
       function writeCurrentUserToDatabase(user) {
@@ -539,9 +598,12 @@
         if (!firebaseDatabase || !state.currentUser) return;
         const userRef = firebaseDatabase.ref(`users/${state.currentUser.id}`);
         const presenceRef = firebaseDatabase.ref(`presence/${state.currentUser.id}`);
-        const offlinePayload = { status: 'offline', lastSeen: Date.now() };
-        userRef.update(offlinePayload);
-        presenceRef.set({ uid: state.currentUser.id, name: state.currentUser.name, email: state.currentUser.email, status: 'offline', lastSeen: Date.now() });
+        userRef.update({ status: 'offline', lastSeen: Date.now() });
+        presenceRef.update({ status: 'offline', lastSeen: Date.now() });
+        if (currentConnectionRef) {
+          currentConnectionRef.remove();
+          currentConnectionRef = null;
+        }
       }
 
       function syncPresenceFromDatabase() {
@@ -555,11 +617,13 @@
           const nextPresence = {};
           Object.entries(values).forEach(([userId, entry]) => {
             if (!entry) return;
+            const status = entry.status === 'online' || (entry.connections && Object.keys(entry.connections).length > 0) ? 'online' : 'offline';
+            const lastSeen = status === 'online' ? entry.lastSeen || Date.now() : entry.lastSeen || Date.now();
             nextPresence[userId] = {
               uid: userId,
               ...entry,
-              status: entry.status || 'offline',
-              lastSeen: entry.lastSeen || Date.now(),
+              status,
+              lastSeen,
             };
           });
 
@@ -645,57 +709,19 @@
       }
 
       function syncConversationsFromDatabase() {
-        if (!firebaseDatabase) return;
-        if (conversationsSyncRef) {
-          firebaseDatabase.ref('conversations').off('value', conversationsSyncRef);
-        }
-
-        conversationsSyncRef = (snapshot) => {
-          const rooms = snapshot.val() || {};
-          const normalizedConversations = {};
-          const previousConversations = state.conversations || {};
-          const newReceiveMessages = [];
-
-          Object.entries(rooms).forEach(([roomKey, roomMessages]) => {
-            if (!roomMessages) return;
-            const messages = Array.isArray(roomMessages)
-              ? roomMessages
-              : Object.values(roomMessages).filter(Boolean);
-            normalizedConversations[roomKey] = messages.sort((a, b) => (a.createdAt || '').localeCompare(b.createdAt || ''));
-
-            if (hasSyncedConversations && state.currentUser) {
-              const previousMessages = previousConversations[roomKey] || [];
-              const previousIds = new Set(previousMessages.map((message) => message.id));
-              const incomingMessages = normalizedConversations[roomKey].filter((message) => !previousIds.has(message.id));
-              incomingMessages.forEach((message) => {
-                if (message.senderId !== state.currentUser.id && message.id && !lastNotifiedMessageIds.has(message.id)) {
-                  newReceiveMessages.push(message);
-                  lastNotifiedMessageIds.add(message.id);
-                }
-              });
-            }
-          });
-
-          state.conversations = normalizedConversations;
-          persist();
-          render();
-          if (newReceiveMessages.length && state.settings.notificationsEnabled) {
-            playNotificationSound('receive');
-          }
-          hasSyncedConversations = true;
-        };
-
-        firebaseDatabase.ref('conversations').on('value', conversationsSyncRef);
+        // Converted to room-based listeners; keep this function for legacy compatibility.
       }
 
       function render() {
         const previousMessageList = document.querySelector('.message-list');
+        let previousMessageInfo = null;
         if (previousMessageList) {
-          state.messageScrollInfo = {
+          previousMessageInfo = {
             roomKey: previousMessageList.dataset.roomKey || null,
             scrollTop: previousMessageList.scrollTop,
             scrollHeight: previousMessageList.scrollHeight,
             clientHeight: previousMessageList.clientHeight,
+            isAtBottom: isScrolledToBottom(previousMessageList),
           };
         }
 
@@ -953,8 +979,9 @@
                 <div class="input-row">
                   <textarea id="draft" rows="1" placeholder="Write a message…">${state.draft}</textarea>
                   <label class="upload-btn">+ Image<input id="image-input" type="file" accept="image/*"></label>
-                  <button class="primary-btn" type="submit">Send</button>
+                  <button class="primary-btn" type="submit">${state.sendStatus === 'sending' ? 'Sending…' : 'Send'}</button>
                 </div>
+                ${state.sendStatus === 'failed' ? `<div class="status error">${state.sendError || 'Message failed to send.'} <button type="button" class="ghost-btn" id="retry-send">Retry</button></div>` : ''}
               </form>
               ${state.error ? `<p class="status error">${state.error}</p>` : ''}
             </main>
@@ -1011,20 +1038,37 @@
                       <span>Enable sound notifications</span>
                       <input class="setting-toggle" id="notify-toggle" type="checkbox" ${state.settings.notificationsEnabled ? 'checked' : ''}>
                     </div>
+                    <div class="setting-row">
+                      <span>Enable browser notifications</span>
+                      <input class="setting-toggle" id="browser-notify-toggle" type="checkbox" ${state.settings.browserNotificationsEnabled ? 'checked' : ''}>
+                    </div>
+                    <div class="setting-row">
+                      <span>Enable vibration</span>
+                      <input class="setting-toggle" id="vibration-toggle" type="checkbox" ${state.settings.vibrationEnabled ? 'checked' : ''}>
+                    </div>
                     <label>
                       Volume
                       <input id="notify-volume" class="setting-slider" type="range" min="0" max="1" step="0.1" value="${state.settings.volume}">
                     </label>
-                    <p class="modal-help">Incoming messages play a sound for new chats and group rooms unless notifications are muted.</p>
+                    <button class="ghost-btn" id="request-notification-permission" type="button">Request browser notification permission</button>
+                    <p class="modal-help">Incoming messages play a sound or browser notification when enabled. Browser notifications appear only when the app is in the background.</p>
                   </div>
                 </div>
               </div>` : ''}
           </div>`;
 
         const newMessageList = document.querySelector('.message-list');
-        if (newMessageList && newMessageList.dataset.roomKey === state.messageScrollInfo.roomKey) {
-          const heightDelta = newMessageList.scrollHeight - state.messageScrollInfo.scrollHeight;
-          newMessageList.scrollTop = Math.max(0, state.messageScrollInfo.scrollTop + heightDelta);
+        if (newMessageList && previousMessageInfo && newMessageList.dataset.roomKey === previousMessageInfo.roomKey) {
+          if (previousMessageInfo.isAtBottom) {
+            newMessageList.scrollTop = newMessageList.scrollHeight;
+          } else {
+            const heightDelta = newMessageList.scrollHeight - previousMessageInfo.scrollHeight;
+            newMessageList.scrollTop = Math.max(0, previousMessageInfo.scrollTop + heightDelta);
+          }
+        }
+        if (newMessageList) {
+          const handler = ensureMessageListScrollHandler();
+          newMessageList.addEventListener('scroll', handler);
         }
         syncDraftFieldState();
 
@@ -1054,10 +1098,24 @@
           persist();
           render();
         });
+        document.getElementById('browser-notify-toggle')?.addEventListener('change', (event) => {
+          state.settings.browserNotificationsEnabled = event.target.checked;
+          persist();
+          requestBrowserNotificationPermission();
+          render();
+        });
+        document.getElementById('vibration-toggle')?.addEventListener('change', (event) => {
+          state.settings.vibrationEnabled = event.target.checked;
+          persist();
+          render();
+        });
         document.getElementById('notify-volume')?.addEventListener('input', (event) => {
           state.settings.volume = Number(event.target.value);
           persist();
           render();
+        });
+        document.getElementById('request-notification-permission')?.addEventListener('click', () => {
+          requestBrowserNotificationPermission();
         });
         document.getElementById('select-accounts').addEventListener('click', () => {
           state.groupModalOpen = true;
@@ -1080,10 +1138,17 @@
         });
         document.querySelectorAll('[data-room]').forEach((button) => {
           button.addEventListener('click', () => {
-            state.activeRoomKey = button.dataset.room;
+            const roomKey = button.dataset.room;
+            if (roomKey !== state.activeRoomKey) {
+              stopRoomMessageListener(state.activeRoomKey);
+            }
+            state.activeRoomKey = roomKey;
             state.activeContactId = button.dataset.contact || null;
             state.activeRoomMenuKey = null;
             render();
+            if (roomKey) {
+              startRoomMessageListener(roomKey);
+            }
           });
         });
         document.querySelectorAll('[data-view-profile]').forEach((button) => {
@@ -1132,6 +1197,16 @@
             render();
           });
         }
+        document.getElementById('retry-send')?.addEventListener('click', () => {
+          if (state.failedMessage && getActiveRoomKey()) {
+            state.draft = state.failedMessage.text || '';
+            state.selectedImage = state.failedMessage.image || '';
+            state.failedMessage = null;
+            state.sendStatus = 'idle';
+            state.sendError = '';
+            render();
+          }
+        });
       }
 
       function syncGroupMembershipsToDatabase(roomKey, memberIds) {
@@ -1158,14 +1233,14 @@
           try {
             state.settings = { ...state.settings, ...JSON.parse(storedSettings) };
           } catch {
-            state.settings = { notificationsEnabled: true, volume: 0.7 };
+            state.settings = { ...state.settings, notificationsEnabled: true, browserNotificationsEnabled: true, vibrationEnabled: true, volume: 0.7 };
           }
         }
         if (raw) {
           try {
             const parsed = JSON.parse(raw);
             state.users = (parsed.users || []).filter((user) => !isHiddenContact(user));
-            state.conversations = parsed.conversations || {};
+            state.conversations = {};
             state.roomMeta = parsed.roomMeta || {};
             state.activeContactId = parsed.activeContactId || null;
             state.activeRoomKey = parsed.activeRoomKey || null;
@@ -1189,11 +1264,22 @@
 
         firebaseAuth = firebase.auth();
         firebaseDatabase = firebase.database();
+        firebaseStorage = firebase.storage();
+        connectedRef = firebaseDatabase.ref('.info/connected');
+        state.connectionId = state.connectionId || createId('conn');
+        connectedRef.on('value', (snapshot) => {
+          const isConnected = snapshot.val() === true;
+          if (!isConnected) {
+            return;
+          }
+          if (state.currentUser) {
+            setUserPresenceOnline(state.currentUser);
+          }
+        });
         syncUsersFromDatabase();
         syncPresenceFromDatabase();
         syncTypingFromDatabase();
         syncRoomMetaFromDatabase();
-        syncConversationsFromDatabase();
         window.addEventListener('beforeunload', () => setUserPresenceOffline());
         firebaseAuth.onAuthStateChanged((user) => {
           state.authReady = true;
@@ -1213,6 +1299,9 @@
             state.authMessage = '';
           }
           render();
+          if (state.activeRoomKey) {
+            startRoomMessageListener(state.activeRoomKey);
+          }
         });
       }
 
@@ -1423,40 +1512,346 @@
         render();
       }
 
+      function getRoomByKey(roomKey) {
+        const contacts = state.users.filter((user) => user.id !== state.currentUser?.id);
+        const directRooms = contacts.map((contact) => ({ roomKey: [state.currentUser.id, contact.id].sort().join('-'), type: 'direct', name: contact.name, memberIds: [state.currentUser.id, contact.id], contactId: contact.id }));
+        const groupRooms = Object.entries(state.roomMeta)
+          .filter(([, meta]) => meta.type === 'group')
+          .map(([key, meta]) => ({ roomKey: key, type: 'group', name: meta.name || 'New group', memberIds: meta.memberIds || [], contactId: null }));
+        return [...directRooms, ...groupRooms].find((room) => room.roomKey === roomKey) || null;
+      }
+
+      function compressImageFile(file, maxWidth = 1200, quality = 0.75) {
+        return new Promise((resolve, reject) => {
+          const image = new Image();
+          const reader = new FileReader();
+          reader.onload = () => {
+            image.onload = () => {
+              const scale = Math.min(1, maxWidth / image.width);
+              const width = Math.round(image.width * scale);
+              const height = Math.round(image.height * scale);
+              const canvas = document.createElement('canvas');
+              canvas.width = width;
+              canvas.height = height;
+              const ctx = canvas.getContext('2d');
+              ctx.drawImage(image, 0, 0, width, height);
+              canvas.toBlob((blob) => {
+                if (!blob) {
+                  reject(new Error('Image compression failed'));
+                  return;
+                }
+                resolve(blob);
+              }, 'image/jpeg', quality);
+            };
+            image.onerror = () => reject(new Error('Image load failed'));
+            image.src = reader.result;
+          };
+          reader.onerror = () => reject(new Error('Image read failed')); 
+          reader.readAsDataURL(file);
+        });
+      }
+
+      function uploadImageFile(file, roomKey) {
+        if (!firebaseStorage || !state.currentUser) return Promise.reject(new Error('Storage not available'));
+        const fileName = `${state.currentUser.id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        const storageRef = firebaseStorage.ref(`images/${roomKey}/${fileName}`);
+        return storageRef.put(file).then((snapshot) => snapshot.ref.getDownloadURL());
+      }
+
+      function getRoomPageState(roomKey) {
+        if (!roomPageState[roomKey]) {
+          roomPageState[roomKey] = { limit: 100, loadingOlder: false, hasMore: true, earliestLoadedAt: null };
+        }
+        return roomPageState[roomKey];
+      }
+
+      function normalizeRoomMessage(snapshot) {
+        const value = snapshot.val();
+        if (!value) return null;
+        const message = { ...value, id: value.id || snapshot.key };
+        const timestamp = typeof message.createdAt === 'number' ? message.createdAt : Date.parse(message.createdAt || '') || message.localCreatedAt || Date.now();
+        message.createdAt = Number.isFinite(timestamp) ? timestamp : Date.now();
+        return message;
+      }
+
+      function ensureRoomMessageState(roomKey) {
+        roomMessageIds[roomKey] = roomMessageIds[roomKey] || new Set();
+        if (!state.conversations[roomKey]) {
+          state.conversations[roomKey] = [];
+        }
+      }
+
+      function insertRoomMessage(roomKey, message) {
+        if (!message || !message.id) return false;
+        ensureRoomMessageState(roomKey);
+        const messages = state.conversations[roomKey] || [];
+        if (roomMessageIds[roomKey].has(message.id) || messages.some((entry) => entry.id === message.id)) {
+          return false;
+        }
+        roomMessageIds[roomKey].add(message.id);
+        messages.push(message);
+        messages.sort((a, b) => a.createdAt - b.createdAt);
+        state.conversations[roomKey] = messages;
+        const pageState = getRoomPageState(roomKey);
+        pageState.earliestLoadedAt = messages[0]?.createdAt || pageState.earliestLoadedAt;
+        if (messages.length < pageState.limit) {
+          pageState.hasMore = true;
+        }
+        persist();
+        return true;
+      }
+
+      function buildMessageRow(message) {
+        const mine = message.senderId === state.currentUser.id;
+        const sender = state.users.find((user) => user.id === message.senderId);
+        const senderLabel = sender?.name || 'Unknown account';
+        return `<div class="message-row ${mine ? 'mine' : ''}" data-message-id="${message.id}"><div class="bubble ${mine ? 'mine' : ''}">${!mine ? `<div class="sender-name">${senderLabel}</div>` : ''}${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span></div></div></div>`;
+      }
+
+      function appendMessageToDOM(message, roomKey) {
+        if (roomKey !== state.activeRoomKey) return;
+        const messageList = document.querySelector('.message-list');
+        if (!messageList || !message.id) return;
+        if (messageList.querySelector(`[data-message-id="${message.id}"]`)) return;
+        const shouldScroll = isScrolledToBottom(messageList);
+        messageList.insertAdjacentHTML('beforeend', buildMessageRow(message));
+        if (shouldScroll) {
+          messageList.scrollTop = messageList.scrollHeight;
+        }
+      }
+
+      function renderActiveRoomMessages() {
+        const messageList = document.querySelector('.message-list');
+        if (!messageList || !state.activeRoomKey) return;
+        const messages = state.conversations[state.activeRoomKey] || [];
+        messageList.innerHTML = messages.map((message) => buildMessageRow(message)).join('');
+        messageList.scrollTop = messageList.scrollHeight;
+      }
+
+      function stopRoomMessageListener(roomKey) {
+        if (!roomKey || !roomMessageListeners[roomKey]) return;
+        const listener = roomMessageListeners[roomKey];
+        listener.query.off('child_added', listener.childAdded);
+        listener.query.off('child_removed', listener.childRemoved);
+        delete roomMessageListeners[roomKey];
+      }
+
+      function startRoomMessageListener(roomKey, limit = 100) {
+        if (!firebaseDatabase || !roomKey) return;
+        stopRoomMessageListener(roomKey);
+        const pageState = getRoomPageState(roomKey);
+        pageState.limit = limit;
+        ensureRoomMessageState(roomKey);
+        const query = firebaseDatabase.ref(`conversations/${roomKey}`).orderByChild('createdAt').limitToLast(limit);
+        const childAdded = (snapshot) => {
+          const message = normalizeRoomMessage(snapshot);
+          if (!message) return;
+          if (!insertRoomMessage(roomKey, message)) return;
+          appendMessageToDOM(message, roomKey);
+        };
+        const childRemoved = (snapshot) => {
+          const messageId = snapshot.key;
+          if (!messageId) return;
+          if (state.conversations[roomKey]) {
+            state.conversations[roomKey] = state.conversations[roomKey].filter((message) => message.id !== messageId);
+          }
+          const messageList = document.querySelector('.message-list');
+          if (roomKey === state.activeRoomKey && messageList) {
+            const element = messageList.querySelector(`[data-message-id="${messageId}"]`);
+            if (element) {
+              element.remove();
+            }
+          }
+        };
+        query.on('child_added', childAdded);
+        query.on('child_removed', childRemoved);
+        roomMessageListeners[roomKey] = { query, childAdded, childRemoved };
+      }
+
+      function loadOlderRoomMessages(roomKey, count = 50) {
+        if (!firebaseDatabase || !roomKey) return;
+        const pageState = getRoomPageState(roomKey);
+        if (pageState.loadingOlder || !pageState.hasMore) return;
+        pageState.loadingOlder = true;
+        const messages = state.conversations[roomKey] || [];
+        const oldest = messages[0];
+        if (!oldest) {
+          pageState.loadingOlder = false;
+          pageState.hasMore = false;
+          return;
+        }
+        const query = firebaseDatabase.ref(`conversations/${roomKey}`).orderByChild('createdAt').endAt(oldest.createdAt - 1).limitToLast(count);
+        query.once('value', (snapshot) => {
+          const loaded = [];
+          snapshot.forEach((child) => {
+            const message = normalizeRoomMessage(child);
+            if (message && !roomMessageIds[roomKey]?.has(message.id)) {
+              loaded.push(message);
+            }
+          });
+          loaded.sort((a, b) => a.createdAt - b.createdAt);
+          if (loaded.length > 0) {
+            ensureRoomMessageState(roomKey);
+            state.conversations[roomKey] = [...loaded, ...(state.conversations[roomKey] || [])];
+            loaded.forEach((message) => roomMessageIds[roomKey].add(message.id));
+            pageState.earliestLoadedAt = state.conversations[roomKey][0]?.createdAt || pageState.earliestLoadedAt;
+            if (loaded.length < count) {
+              pageState.hasMore = false;
+            }
+            if (roomKey === state.activeRoomKey) {
+              render();
+            }
+          } else {
+            pageState.hasMore = false;
+          }
+          pageState.loadingOlder = false;
+        });
+      }
+
+      function ensureMessageListScrollHandler() {
+        if (messageListScrollHandler) return messageListScrollHandler;
+        messageListScrollHandler = function () {
+          const messageList = document.querySelector('.message-list');
+          if (!messageList || !state.activeRoomKey) return;
+          if (messageList.scrollTop > 40) return;
+          const pageState = getRoomPageState(state.activeRoomKey);
+          if (pageState.loadingOlder || !pageState.hasMore) return;
+          loadOlderRoomMessages(state.activeRoomKey);
+        };
+        return messageListScrollHandler;
+      }
+
+      function dataURLToBlob(dataURL) {
+        if (!dataURL || !dataURL.includes(',')) return null;
+        const [header, base64] = dataURL.split(',');
+        const contentType = header.match(/data:(.*);base64/)?.[1] || 'image/jpeg';
+        const binary = atob(base64);
+        const array = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) {
+          array[i] = binary.charCodeAt(i);
+        }
+        return new Blob([array], { type: contentType });
+      }
+
+      function removeMessageFromDOM(messageId) {
+        if (!messageId) return;
+        const messageList = document.querySelector('.message-list');
+        if (!messageList) return;
+        const element = messageList.querySelector(`[data-message-id="${messageId}"]`);
+        if (element) {
+          element.remove();
+        }
+      }
+
       function sendMessage() {
-        if (!state.currentUser) return;
-        const cleanText = state.draft.trim();
+        if (!state.currentUser || state.sendStatus === 'sending') return;
+        const draftField = document.getElementById('draft');
+        const currentDraft = draftField ? draftField.value : state.draft;
+        const roomKey = getActiveRoomKey();
+        if (!roomKey) {
+          state.error = 'Please select a conversation first.';
+          render();
+          return;
+        }
+        const cleanText = currentDraft.trim();
         if (!cleanText && !state.selectedImage) {
           state.error = 'Add a note or choose an image before sending.';
           render();
           return;
         }
+
+        state.sendStatus = 'sending';
+        state.sendError = '';
         state.error = '';
-        const roomKey = getActiveRoomKey();
-        if (!roomKey) {
-          render();
-          return;
-        }
         const senderId = state.detectiveMode ? (state.impersonatedUserId || state.currentUser.id) : state.currentUser.id;
-        const outgoing = { id: createId('msg'), senderId, text: cleanText, image: state.selectedImage, createdAt: new Date().toISOString() };
+        const outgoing = {
+          id: createId('msg'),
+          senderId,
+          text: cleanText,
+          image: '',
+          createdAt: Date.now(),
+          localCreatedAt: Date.now(),
+          status: 'pending',
+        };
+
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
+        ensureRoomMessageState(roomKey);
+        roomMessageIds[roomKey].add(outgoing.id);
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
         setTypingStatus(roomKey, false);
         state.isDraftEditing = false;
         state.draft = '';
         state.selectedImage = '';
-        persist();
+        state.selectedImageFile = null;
         render();
+        appendMessageToDOM(outgoing, roomKey);
         requestAnimationFrame(() => {
-          const draftField = document.getElementById('draft');
-          if (draftField) {
-            draftField.focus();
-            draftField.setSelectionRange(0, 0);
+          const draftFieldAfter = document.getElementById('draft');
+          if (draftFieldAfter) {
+            draftFieldAfter.focus();
           }
         });
 
-        if (roomRef) {
-          roomRef.push(outgoing);
+        if (!roomRef) {
+          state.sendStatus = 'failed';
+          state.sendError = 'Firebase database is unavailable. Please refresh.';
+          state.conversations[roomKey] = (state.conversations[roomKey] || []).filter((message) => message.id !== outgoing.id);
+          removeMessageFromDOM(outgoing.id);
+          render();
+          return;
+        }
+
+        const sendPayload = { ...outgoing };
+        const uploadAndSend = (imageFile) => {
+          if (!imageFile) {
+            sendPayload.image = '';
+            sendToFirebase();
+            return;
+          }
+          compressImageFile(imageFile)
+            .then((compressedBlob) => uploadImageFile(compressedBlob, roomKey))
+            .then((downloadUrl) => {
+              sendPayload.image = downloadUrl;
+              sendToFirebase();
+            })
+            .catch((error) => {
+              state.sendStatus = 'failed';
+              state.sendError = `Image upload failed: ${error.message || 'upload error'}`;
+              state.failedMessage = outgoing;
+              state.conversations[roomKey] = (state.conversations[roomKey] || []).filter((message) => message.id !== outgoing.id);
+              removeMessageFromDOM(outgoing.id);
+              render();
+            });
+        };
+
+        const sendToFirebase = () => {
+          sendPayload.status = 'sent';
+          const newMessageRef = roomRef.push();
+          newMessageRef.set(sendPayload, (error) => {
+            if (error) {
+              state.sendStatus = 'failed';
+              state.sendError = `Message failed to send: ${error.message || 'network error'}`;
+              state.failedMessage = outgoing;
+              state.conversations[roomKey] = (state.conversations[roomKey] || []).filter((message) => message.id !== outgoing.id);
+              removeMessageFromDOM(outgoing.id);
+              render();
+              return;
+            }
+            state.sendStatus = 'success';
+            state.failedMessage = null;
+            state.sendError = '';
+            state.error = '';
+            render();
+          });
+        };
+
+        if (state.selectedImageFile) {
+          uploadAndSend(state.selectedImageFile);
+        } else if (state.selectedImage) {
+          const blob = dataURLToBlob(state.selectedImage);
+          uploadAndSend(blob);
+        } else {
+          uploadAndSend(null);
         }
       }
 
@@ -1466,6 +1861,7 @@
         const reader = new FileReader();
         reader.onload = () => {
           state.selectedImage = reader.result;
+          state.selectedImageFile = file;
           state.isDraftEditing = false;
           render();
           requestAnimationFrame(() => {
