@@ -1612,7 +1612,8 @@
 
       function uploadImageFile(file, roomKey) {
         if (!firebaseStorage || !state.currentUser) return Promise.reject(new Error('Storage not available'));
-        const fileName = `${state.currentUser.id}-${Date.now()}-${file.name.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        const safeFileName = String(file.name || 'image').replace(/[^a-zA-Z0-9.-]/g, '_');
+        const fileName = `${state.currentUser.id}-${Date.now()}-${safeFileName}`;
         const storageRef = firebaseStorage.ref(`images/${roomKey}/${fileName}`);
         return storageRef.put(file).then((snapshot) => snapshot.ref.getDownloadURL());
       }
@@ -1631,6 +1632,22 @@
         const timestamp = typeof message.createdAt === 'number' ? message.createdAt : Date.parse(message.createdAt || '') || message.localCreatedAt || Date.now();
         message.createdAt = Number.isFinite(timestamp) ? timestamp : Date.now();
         return message;
+      }
+
+      function escapeHTML(value) {
+        return String(value || '')
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#39;');
+      }
+
+      function buildImageMarkup(image) {
+        if (!image) return '';
+        const safeUrl = escapeHTML(image);
+        return `<div class="message-image"><img src="${safeUrl}" alt="Shared content" loading="lazy" onerror="this.style.display='none'" />` +
+               `<a class="image-link" href="${safeUrl}" target="_blank" rel="noreferrer noopener">Open image</a></div>`;
       }
 
       function ensureRoomMessageState(roomKey) {
@@ -1664,7 +1681,9 @@
         const mine = message.senderId === state.currentUser.id;
         const sender = state.users.find((user) => user.id === message.senderId);
         const senderLabel = sender?.name || 'Unknown account';
-        return `<div class="message-row ${mine ? 'mine' : ''}" data-message-id="${message.id}"><div class="bubble ${mine ? 'mine' : ''}">${!mine ? `<div class="sender-name">${senderLabel}</div>` : ''}${message.text ? `<p>${message.text}</p>` : ''}${message.image ? `<img src="${message.image}" alt="Shared content">` : ''}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span></div></div></div>`;
+        const safeText = message.text ? `<p>${escapeHTML(message.text)}</p>` : '';
+        const safeImage = message.image ? buildImageMarkup(message.image) : '';
+        return `<div class="message-row ${mine ? 'mine' : ''}" data-message-id="${escapeHTML(message.id)}"><div class="bubble ${mine ? 'mine' : ''}">${!mine ? `<div class="sender-name">${escapeHTML(senderLabel)}</div>` : ''}${safeText}${safeImage}<div class="bubble-footer"><span>${formatTime(message.createdAt)}</span></div></div></div>`;
       }
 
       function appendMessageToDOM(message, roomKey) {
@@ -1792,6 +1811,15 @@
         return new Blob([array], { type: contentType });
       }
 
+      function blobToDataURL(blob) {
+        return new Promise((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result);
+          reader.onerror = () => reject(new Error('Could not read compressed image'));
+          reader.readAsDataURL(blob);
+        });
+      }
+
       function removeMessageFromDOM(messageId) {
         if (!messageId) return;
         const messageList = document.querySelector('.message-list');
@@ -1834,6 +1862,8 @@
         };
 
         const roomRef = firebaseDatabase ? firebaseDatabase.ref(`conversations/${roomKey}`) : null;
+        const pendingImageFile = state.selectedImageFile;
+        const pendingImageDataUrl = state.selectedImage;
         ensureRoomMessageState(roomKey);
         state.conversations[roomKey] = [...(state.conversations[roomKey] || []), outgoing];
         setTypingStatus(roomKey, false);
@@ -1866,19 +1896,19 @@
             sendToFirebase();
             return;
           }
-          compressImageFile(imageFile)
-            .then((compressedBlob) => uploadImageFile(compressedBlob, roomKey))
-            .then((downloadUrl) => {
-              sendPayload.image = downloadUrl;
+          compressImageFile(imageFile, 800, 0.55)
+            .then((compressedBlob) => blobToDataURL(compressedBlob))
+            .then((dataUrl) => {
+              sendPayload.image = dataUrl;
               state.conversations[roomKey] = (state.conversations[roomKey] || []).map((message) =>
-                message.id === outgoing.id ? { ...message, image: downloadUrl, status: 'sent' } : message
+                message.id === outgoing.id ? { ...message, image: dataUrl, status: 'sent' } : message
               );
               render();
               sendToFirebase();
             })
             .catch((error) => {
               state.sendStatus = 'failed';
-              state.sendError = `Image upload failed: ${error.message || 'upload error'}`;
+              state.sendError = `Image processing failed: ${error.message || 'error'}`;
               state.failedMessage = outgoing;
               state.conversations[roomKey] = (state.conversations[roomKey] || []).filter((message) => message.id !== outgoing.id);
               removeMessageFromDOM(outgoing.id);
@@ -1907,10 +1937,10 @@
           });
         };
 
-        if (state.selectedImageFile) {
-          uploadAndSend(state.selectedImageFile);
-        } else if (state.selectedImage) {
-          const blob = dataURLToBlob(state.selectedImage);
+        if (pendingImageFile) {
+          uploadAndSend(pendingImageFile);
+        } else if (pendingImageDataUrl) {
+          const blob = dataURLToBlob(pendingImageDataUrl);
           uploadAndSend(blob);
         } else {
           uploadAndSend(null);
